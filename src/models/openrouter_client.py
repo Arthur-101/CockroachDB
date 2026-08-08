@@ -118,12 +118,15 @@ class OpenRouterClient:
             }
         )
         
-        # Model ID mapping
+        # Model ID mapping — resolved from role assignments (Redis → SQLite → fallback).
+        # These are used only by the legacy CLI path; the Tauri UI routes via IntelligentRouter.
+        from src.controller.model_router import _resolve_role
+        ms = getattr(self, 'memory_store', None)
         self.model_ids = {
-            ModelType.QWEN: config.settings.model_qwen,
-            ModelType.GEMINI_FLASH: config.settings.model_gemini_flash,
-            ModelType.MIMO: config.settings.model_mimo,
-            ModelType.DEEPSEEK: config.settings.model_deepseek_flash,
+            ModelType.QWEN:        _resolve_role('orchestrator', ms) or 'qwen/qwen3.7-flash',
+            ModelType.GEMINI_FLASH: _resolve_role('multimodal', ms)  or 'google/gemini-2.5-flash-lite',
+            ModelType.MIMO:        _resolve_role('reasoning', ms)    or 'deepseek/deepseek-v4-pro',
+            ModelType.DEEPSEEK:    _resolve_role('coding', ms)       or 'deepseek/deepseek-v4-flash',
         }
         
         # Model capabilities (approximate, based on documentation)

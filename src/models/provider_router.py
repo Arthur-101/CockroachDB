@@ -895,11 +895,14 @@ class ProviderRouter:
         max_tokens: int,
         tools: Optional[List[Dict[str, Any]]] = None
     ) -> Dict[str, Any]:
-        """Direct HTTP call to Google AI Studio Gemini REST API. Supports vision/image_url content blocks."""
+        """Direct HTTP call to Google AI Studio Gemini REST API.
+        Supports vision/image_url content blocks AND native function calling.
+        Translates OpenAI tool schema/history ↔ Gemini functionDeclarations/functionCall/functionResponse.
+        """
         import base64 as _b64
         from src.models.openrouter_client import extract_text_content
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key.strip()}"
-        
+
         system_instruction_parts = []
         contents = []
 
@@ -921,35 +924,95 @@ class ProviderRouter:
                         elif btype == "image_url":
                             img_url = block.get("image_url", {}).get("url", "")
                             if img_url.startswith("data:"):
-                                # data:mime/type;base64,<data>
                                 try:
                                     header, b64data = img_url.split(",", 1)
                                     mime_type = header.split(":")[1].split(";")[0]
-                                    parts.append({
-                                        "inlineData": {"mimeType": mime_type, "data": b64data}
-                                    })
+                                    parts.append({"inlineData": {"mimeType": mime_type, "data": b64data}})
                                 except Exception:
-                                    parts.append({"text": f"[inline image]"})
+                                    parts.append({"text": "[inline image]"})
                             elif img_url.startswith("http"):
                                 parts.append({"fileData": {"mimeType": "image/jpeg", "fileUri": img_url}})
-                        elif btype in ("thinking",):
+                        elif btype == "thinking":
                             txt = block.get("thinking", "")
                             if txt:
                                 parts.append({"text": txt})
                 return parts if parts else [{"text": ""}]
             return [{"text": str(content)}]
 
+        def _normalize_gemini_schema(schema: Any) -> None:
+            """Recursively uppercase all JSON Schema 'type' values for Gemini compliance."""
+            if not isinstance(schema, dict):
+                return
+            if "type" in schema and isinstance(schema["type"], str):
+                schema["type"] = schema["type"].upper()
+            for key in ("properties", "items"):
+                child = schema.get(key)
+                if isinstance(child, dict):
+                    if key == "properties":
+                        for v in child.values():
+                            _normalize_gemini_schema(v)
+                    else:
+                        _normalize_gemini_schema(child)
+
+        # ── 1. Translate OpenAI tools → Gemini functionDeclarations ──────────
+        gemini_tools = []
+        if tools:
+            function_declarations = []
+            for t in tools:
+                if t.get("type") == "function":
+                    fn = t.get("function", {})
+                    params = json.loads(json.dumps(fn.get("parameters", {})))  # deep copy
+                    _normalize_gemini_schema(params)
+                    # Remove unsupported 'required' field at root (Gemini uses per-property 'required')
+                    params.pop("required", None)
+                    function_declarations.append({
+                        "name": fn.get("name"),
+                        "description": fn.get("description", ""),
+                        "parameters": params
+                    })
+            if function_declarations:
+                gemini_tools.append({"functionDeclarations": function_declarations})
+
+        # ── 2. Translate OpenAI-style message history → Gemini contents ──────
         for m in messages:
             role = m.get("role", "user")
             raw_content = m.get("content")
+
             if role == "system":
                 txt = extract_text_content(raw_content)
                 if txt.strip():
                     system_instruction_parts.append({"text": txt})
+
+            elif role == "tool":
+                # Tool execution result → Gemini 'function' role with functionResponse
+                name = m.get("name", "tool")
+                try:
+                    resp_data = json.loads(raw_content) if isinstance(raw_content, str) else raw_content
+                    if not isinstance(resp_data, dict):
+                        resp_data = {"output": str(resp_data)}
+                except Exception:
+                    resp_data = {"output": str(raw_content)}
+                contents.append({
+                    "role": "function",
+                    "parts": [{"functionResponse": {"name": name, "response": resp_data}}]
+                })
+
             else:
-                g_role = "user" if role in ["user", "tool"] else "model"
+                # user / assistant / model turn
+                g_role = "user" if role == "user" else "model"
                 parts = _build_gemini_parts(raw_content)
-                # Merge with previous same-role turn to avoid consecutive-turn rejection
+
+                # If assistant emitted tool_calls in this turn, append functionCall parts
+                if role in ("assistant", "model") and m.get("tool_calls"):
+                    for tc in m["tool_calls"]:
+                        fn_name = tc.get("function", {}).get("name", "")
+                        try:
+                            args = json.loads(tc.get("function", {}).get("arguments", "{}"))
+                        except Exception:
+                            args = {}
+                        parts.append({"functionCall": {"name": fn_name, "args": args}})
+
+                # Merge consecutive same-role turns (Gemini rejects duplicate adjacent roles)
                 if contents and contents[-1]["role"] == g_role:
                     contents[-1]["parts"].extend(parts)
                 else:
@@ -958,6 +1021,7 @@ class ProviderRouter:
         if not contents:
             contents = [{"role": "user", "parts": [{"text": "Hello"}]}]
 
+        # ── 3. Build request payload ──────────────────────────────────────────
         headers = {"Content-Type": "application/json"}
         payload_dict: Dict[str, Any] = {
             "contents": contents,
@@ -966,6 +1030,8 @@ class ProviderRouter:
         if system_instruction_parts:
             sys_combined = "\n\n".join(p["text"] for p in system_instruction_parts)
             payload_dict["systemInstruction"] = {"parts": [{"text": sys_combined}]}
+        if gemini_tools:
+            payload_dict["tools"] = gemini_tools
 
         try:
             payload = json.dumps(payload_dict).encode("utf-8")
@@ -973,13 +1039,39 @@ class ProviderRouter:
             loop = asyncio.get_event_loop()
             res = await loop.run_in_executor(None, lambda: urllib.request.urlopen(req, timeout=60.0))
             data = json.loads(res.read().decode("utf-8"))
-            
+
             candidates = data.get("candidates", [{}])
-            # Concatenate all text parts from the response
-            resp_parts = candidates[0].get("content", {}).get("parts", [{}])
-            content_text = " ".join(p.get("text", "") for p in resp_parts if p.get("text")).strip()
+            resp_parts = candidates[0].get("content", {}).get("parts", [])
+
+            # ── 4. Parse text content ─────────────────────────────────────────
+            content_text = " ".join(
+                p.get("text", "") for p in resp_parts if p.get("text")
+            ).strip()
+
+            # ── 5. Parse functionCall → OpenAI-style tool_calls ───────────────
+            tool_calls_out = None
+            fc_parts = [p for p in resp_parts if "functionCall" in p]
+            if fc_parts:
+                tool_calls_out = []
+                for i, p in enumerate(fc_parts):
+                    fc = p["functionCall"]
+                    tool_calls_out.append({
+                        "id": f"call_gemini_{i}",
+                        "type": "function",
+                        "function": {
+                            "name": fc.get("name", ""),
+                            "arguments": json.dumps(fc.get("args", {}))
+                        }
+                    })
+
             tokens = data.get("usageMetadata", {}).get("totalTokenCount", 0)
-            return {"content": content_text, "model_id": f"google/{model_name}", "tokens_used": tokens, "success": True}
+            return {
+                "content": content_text,
+                "tool_calls": tool_calls_out,
+                "model_id": f"google/{model_name}",
+                "tokens_used": tokens,
+                "success": True
+            }
         except urllib.error.HTTPError as http_err:
             err_body = http_err.read().decode("utf-8") if http_err.fp else str(http_err)
             logger.error(f"Google Direct API HTTP {http_err.code}: {err_body}")
@@ -997,21 +1089,82 @@ class ProviderRouter:
         max_tokens: int,
         tools: Optional[List[Dict[str, Any]]] = None
     ) -> Dict[str, Any]:
-        """Direct HTTP call to Anthropic Messages API."""
+        """Direct HTTP call to Anthropic Messages API.
+        Supports native tool calling (tool_use / tool_result content blocks).
+        Translates OpenAI tool schema/history ↔ Anthropic format.
+        """
         from src.models.openrouter_client import extract_text_content
+
         system_msg = ""
-        user_msgs = []
+        user_msgs: List[Dict[str, Any]] = []
+
+        # ── 1. Translate OpenAI tools → Anthropic tools schema ────────────────
+        anthropic_tools = None
+        if tools:
+            anthropic_tools = []
+            for t in tools:
+                if t.get("type") == "function":
+                    fn = t.get("function", {})
+                    anthropic_tools.append({
+                        "name": fn.get("name"),
+                        "description": fn.get("description", ""),
+                        "input_schema": fn.get("parameters", {"type": "object", "properties": {}})
+                    })
+
+        # ── 2. Translate OpenAI-style message history → Anthropic messages ────
         for m in messages:
-            txt = extract_text_content(m.get("content"))
-            if m.get("role") == "system":
-                system_msg += txt + "\n"
-            else:
-                role = "assistant" if m.get("role") in ["assistant", "model"] else "user"
-                user_msgs.append({"role": role, "content": txt})
+            role = m.get("role", "user")
+            raw_content = m.get("content")
+
+            if role == "system":
+                system_msg += extract_text_content(raw_content) + "\n"
+
+            elif role == "tool":
+                # Tool result → Anthropic tool_result content block inside a 'user' message
+                # Merge with previous user message if it's already a tool_result carrier
+                result_block: Dict[str, Any] = {
+                    "type": "tool_result",
+                    "tool_use_id": m.get("tool_call_id", ""),
+                    "content": extract_text_content(raw_content)
+                }
+                if user_msgs and user_msgs[-1]["role"] == "user" and isinstance(user_msgs[-1]["content"], list):
+                    user_msgs[-1]["content"].append(result_block)
+                else:
+                    user_msgs.append({"role": "user", "content": [result_block]})
+
+            elif role in ("assistant", "model"):
+                content_blocks: List[Dict[str, Any]] = []
+                txt = extract_text_content(raw_content)
+                if txt:
+                    content_blocks.append({"type": "text", "text": txt})
+                # If assistant called tools in this turn, add tool_use blocks
+                for tc in (m.get("tool_calls") or []):
+                    fn = tc.get("function", {})
+                    try:
+                        inp = json.loads(fn.get("arguments", "{}"))
+                    except Exception:
+                        inp = {}
+                    content_blocks.append({
+                        "type": "tool_use",
+                        "id": tc.get("id", ""),
+                        "name": fn.get("name", ""),
+                        "input": inp
+                    })
+                if content_blocks:
+                    user_msgs.append({"role": "assistant", "content": content_blocks})
+
+            else:  # user
+                txt = extract_text_content(raw_content)
+                if user_msgs and user_msgs[-1]["role"] == "user" and isinstance(user_msgs[-1]["content"], str):
+                    # Merge consecutive user text messages
+                    user_msgs[-1]["content"] += "\n" + txt
+                else:
+                    user_msgs.append({"role": "user", "content": txt})
 
         if not user_msgs:
             user_msgs = [{"role": "user", "content": "Hello"}]
 
+        # ── 3. Build request payload ──────────────────────────────────────────
         headers = {
             "x-api-key": api_key.strip(),
             "anthropic-version": "2023-06-01",
@@ -1025,19 +1178,46 @@ class ProviderRouter:
         }
         if system_msg.strip():
             body["system"] = system_msg.strip()
-        if tools:
-            body["tools"] = tools
+        if anthropic_tools:
+            body["tools"] = anthropic_tools
 
         try:
             payload = json.dumps(body).encode("utf-8")
             req = urllib.request.Request("https://api.anthropic.com/v1/messages", data=payload, headers=headers, method="POST")
             loop = asyncio.get_event_loop()
-            res = await loop.run_in_executor(None, lambda: urllib.request.urlopen(req, timeout=30.0))
+            res = await loop.run_in_executor(None, lambda: urllib.request.urlopen(req, timeout=60.0))
             data = json.loads(res.read().decode("utf-8"))
 
-            content = data.get("content", [{}])[0].get("text", "").strip()
+            resp_blocks = data.get("content", [])
+
+            # ── 4. Parse text content ─────────────────────────────────────────
+            content_text = "".join(
+                b.get("text", "") for b in resp_blocks if b.get("type") == "text"
+            ).strip()
+
+            # ── 5. Parse tool_use → OpenAI-style tool_calls ───────────────────
+            tool_calls_out = None
+            tu_blocks = [b for b in resp_blocks if b.get("type") == "tool_use"]
+            if tu_blocks:
+                tool_calls_out = []
+                for tu in tu_blocks:
+                    tool_calls_out.append({
+                        "id": tu.get("id", ""),
+                        "type": "function",
+                        "function": {
+                            "name": tu.get("name", ""),
+                            "arguments": json.dumps(tu.get("input", {}))
+                        }
+                    })
+
             tokens = data.get("usage", {}).get("input_tokens", 0) + data.get("usage", {}).get("output_tokens", 0)
-            return {"content": content, "model_id": f"anthropic/{model_name}", "tokens_used": tokens, "success": True}
+            return {
+                "content": content_text,
+                "tool_calls": tool_calls_out,
+                "model_id": f"anthropic/{model_name}",
+                "tokens_used": tokens,
+                "success": True
+            }
         except urllib.error.HTTPError as http_err:
             err_body = http_err.read().decode("utf-8") if http_err.fp else str(http_err)
             logger.error(f"Anthropic Direct API HTTP {http_err.code}: {err_body}")

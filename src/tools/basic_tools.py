@@ -578,26 +578,40 @@ class BasicTools:
     
     def get_available_tools(self) -> Dict[str, Any]:
         """Get list of available tools with descriptions."""
-        from src.utils.config import config
-        
-        # Dynamically build expert model descriptions from capabilities
-        expert_desc = "Delegate a specialized task to an expert AI model. Use this when you cannot fulfill a request with your current capabilities.\n\n"
-        expert_options = []
-        for model_id, caps in config.settings.model_capabilities.items():
-            if "qwen" in model_id: continue # orchestrator itself
-            
-            friendly_name = model_id.split("/")[-1].replace(".", "").replace("-", "_")
-            if "mimo" in model_id: friendly_name = "mimo_pro"
-            elif "gemini" in model_id and "flash" in model_id: friendly_name = "gemini_flash"
-            elif "gemini" in model_id and "pro" in model_id: friendly_name = "gemini_pro"
-            
-            expert_options.append(f"'{friendly_name}'")
-            expert_desc += f"- {friendly_name}:\n"
-            expert_desc += f"  Strengths: {', '.join(caps.get('strengths', []))}\n"
-            expert_desc += f"  Best for: {', '.join(caps.get('best_use_cases', []))}\n\n"
-            
-        expert_desc += """IMPORTANT: Be sure to read the model_capabilities section before using any expert model, so that you can assign correct model to correct task.
-                        deepseek models are capable of logic/reasoning too. DO NOT just force them to write code unless needed."""
+        from src.controller.model_router import CapabilityMatcher, _resolve_role
+
+        # Build expert model descriptions dynamically from assigned roles
+        expert_desc = (
+            "Delegate a specialized task to an expert AI model. "
+            "Use this when you cannot fulfill a request with your current capabilities.\n\n"
+        )
+        roles = [
+            ("coding",      "coding"),
+            ("reasoning",   "reasoning"),
+            ("multimodal",  "multimodal"),
+            ("synthesizer", "synthesizer"),
+        ]
+        for role, label in roles:
+            model_id = _resolve_role(role) or ""
+            caps = CapabilityMatcher.get(model_id) if model_id else {}
+            expert_desc += f"- '{label}':\n"
+            if caps.get("strong_coding"):
+                expert_desc += "  Strengths: coding, debugging, refactoring, algorithms\n"
+                expert_desc += "  Best for: code generation, backend systems, large codebases\n\n"
+            elif caps.get("strong_reasoning"):
+                expert_desc += "  Strengths: deep reasoning, analysis, planning, maths\n"
+                expert_desc += "  Best for: architecture design, research, multi-step reasoning\n\n"
+            elif caps.get("vision"):
+                expert_desc += "  Strengths: OCR, image understanding, video analysis, multimodal extraction\n"
+                expert_desc += "  Best for: image/document analysis, screenshots, charts\n\n"
+            else:
+                expert_desc += f"  Strengths: general-purpose, tool use\n"
+                expert_desc += f"  Best for: aggregation, synthesis, general tasks\n\n"
+
+        expert_desc += (
+            "IMPORTANT: deepseek models are capable of logic/reasoning too. "
+            "Do NOT force them to write code unless code is actually needed."
+        )
 
         tools = {
             "get_current_directory": {

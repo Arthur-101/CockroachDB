@@ -373,36 +373,36 @@ def cleanup_data(days: int):
 
 def show_config():
     """Show current configuration."""
+    from src.controller.model_router import _resolve_role
     settings = config.settings
-    
+
     table = Table(title="Configuration")
     table.add_column("Setting", style="cyan")
     table.add_column("Value", style="green")
-    
+
     # API settings
     table.add_row("OpenRouter Base URL", settings.openrouter_base_url)
     table.add_row("API Key", "[red](hidden)[/red]" if settings.openrouter_api_key else "[yellow]Not set[/yellow]")
-    
-    # Model settings
-    table.add_row("Qwen Model", settings.model_qwen)
-    table.add_row("Gemini Flash", settings.model_gemini_flash)
-    table.add_row("Mimo Model", settings.model_mimo)
-    table.add_row("DeepSeek Model", settings.model_deepseek_flash)
-    
+
+    # Active role assignments (dynamic — from Redis/SQLite)
+    for role in ["orchestrator", "coding", "reasoning", "multimodal", "synthesizer", "summary"]:
+        model = _resolve_role(role) or "[yellow]Not assigned[/yellow]"
+        table.add_row(f"Role: {role}", model)
+
     # Cost settings
     table.add_row("Cost Limit", f"${settings.cost_limit}")
     table.add_row("Cost Warning", f"${settings.cost_warning_threshold}")
-    
+
     # Performance settings
     table.add_row("Max Tokens", str(settings.max_tokens_per_request))
     table.add_row("Temperature", str(settings.temperature))
     table.add_row("Request Timeout", f"{settings.request_timeout}s")
-    
+
     # Security settings
     table.add_row("Allowed File Types", ", ".join(settings.allowed_file_types))
     table.add_row("Max File Size", f"{settings.max_file_size_mb}MB")
     table.add_row("Require Permission", "Yes" if settings.require_permission_prompt else "No")
-    
+
     console.print(table)
 
 

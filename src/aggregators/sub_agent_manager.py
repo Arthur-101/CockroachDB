@@ -90,9 +90,9 @@ class SubAgentManager:
 
     RELAY_PREFIX = "RELAY_REQUEST:"
 
-    def __init__(self, openrouter_client):
+    def __init__(self, openrouter_client, memory_store=None):
         self.client = openrouter_client
-        self.provider_router = ProviderRouter(openrouter_client)
+        self.provider_router = ProviderRouter(openrouter_client, memory_store=memory_store)
 
     def _get_dynamic_model_for_role(self, role: str, default_model: str = "openrouter:qwen/qwen3.5-flash-02-23") -> str:
         """Fetch role model override from Redis or SQLite if available."""
@@ -403,6 +403,10 @@ class SubAgentManager:
                 })
 
             turn += 1
+
+        # If content is empty (model only used tools or returned nothing), add a fallback
+        if not content.strip():
+            content = f"[{role} agent completed tool execution — no summary text returned]"
 
         # Stream live sub-agent output to UI via stderr
         log_payload = json.dumps({"role": role, "model": active_model, "reply": content})

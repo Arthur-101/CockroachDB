@@ -101,7 +101,7 @@ class ChatRouter:
         
         # Check for Multi-Model Team Collaborative execution mode
         if model_override in ["collaborative", "team", "multi_model"]:
-            sub_manager = SubAgentManager(self.client)
+            sub_manager = SubAgentManager(self.client, memory_store=self.memory_store)
             consensus = ConsensusAggregator(self.client)
             
             # Detect file attachments from [Attached File: name | Path: /path] tags
@@ -312,10 +312,10 @@ class ChatRouter:
                     Message(role="system", content=f"Related past context based on keywords:\n{related_text}")
                 )
                 
-        # Add recent raw messages (last 4 messages = 2 turns) to keep conversational style
-        # We fetch a few extra in case there are sub_agent messages to filter out
-        recent_raw = self.memory_store.get_messages(session_id, limit=8)
-        valid_recent = [m for m in recent_raw if m["role"] != "sub_agent"][-4:]
+        # Add recent raw messages (last 8 messages = ~4 turns), filtering sub_agent role
+        # Fetch 12 so there are enough after filtering out sub_agent entries
+        recent_raw = self.memory_store.get_messages(session_id, limit=12)
+        valid_recent = [m for m in recent_raw if m["role"] != "sub_agent"][-8:]
         
         for msg in valid_recent:
             # The current user message is already in the db, don't add it yet
