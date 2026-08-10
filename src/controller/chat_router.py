@@ -653,7 +653,6 @@ class ChatRouter:
                         current_time = datetime.now().strftime("%H:%M:%S")
                         print(f"[{current_time}] 🔧 Tool completed: {name} | Status: {'Success' if tool_result.get('success') else 'Failed'}", file=sys.stderr, flush=True)
                         
-                        import json
                         try:
                             args_str = json.dumps(arguments, indent=2)
                         except Exception:

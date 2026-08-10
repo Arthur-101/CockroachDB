@@ -344,7 +344,6 @@ class BasicTools:
         try:
             from src.utils.config import config
             import httpx
-            import json
             import base64
             from pathlib import Path
             from src.processors.file_processor import FileProcessor
