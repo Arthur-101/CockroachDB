@@ -7,13 +7,13 @@
 - Always update the notion page for the planning and executed tasks too.
 - And also update the Notion page if required.
 
-# AI Agent System - OpenRouter + MCP Architecture
+# CockroachSRE — AI SRE Agent System (AWS Bedrock + CockroachDB Architecture)
 
 ## Project Overview
-Multi-model AI agent system using OpenRouter APIs with MCP-style architecture. Routes tasks to specialized models instead of single model.
+CockroachSRE is an AI-powered SRE (Site Reliability Engineering) agent system developed for the CockroachDB × AWS Hackathon. It utilizes CockroachDB Cloud Serverless for memory storage and RAG vector searches, and AWS Bedrock (Claude 3.x) for reasoning, orchestration, and task execution.
 
 ## Goal
-Create a multi-model AI agent system using OpenRouter APIs with MCP-style architecture that routes tasks to specialized models instead of relying on a single model. The system should support text queries, file inputs, multimodal reasoning, memory (RAG), and tool execution. The AI should run continuously in Windows background with system tray UI and shared memory across all models.
+Create an intelligent SRE Assistant that runs continuously to monitor services, analyze logs, query CockroachDB performance statistics, suggest playbooks, and automate troubleshooting. The system supports semantic context retrieval, shared memory across sub-agents, local tool execution, and CockroachDB MCP server integration, completely bypassing OpenRouter in favor of direct provider integrations.
 
 ## Instructions
 - Use phased approach: Phase 1 (CLI), Phase 2 (Background service + UI), Phase 3 (Advanced features)
@@ -72,17 +72,16 @@ Create a multi-model AI agent system using OpenRouter APIs with MCP-style archit
 ## Core Architecture
 
 ### Model Selection Strategy
-1. **Main Controller** (cheap, always running): qwen3.5-flash-02-23
-2. **Cheap Fast Model** (small tasks): gemini-2.5-flash-lite
-3. **Planner/Reasoning Layer** (complex tasks): deepseek-v4-pro / mimo-v2.5-pro
-4. **Coding/Execution Model**: deepseek-v4-flash
-5. **Multimodal Layer** (rare use): gemini-2.5-flash-lite
+1. **Main Controller & Orchestrator**: Google Gemini 2.0 Flash (fast, high rate limits)
+2. **Reasoning & Planning Layer**: AWS Bedrock (Claude 3.5 Sonnet v2)
+3. **Coding/Execution Specialist**: Google Gemini 2.0 Flash / OpenAI GPT-4o Mini
+4. **Multimodal Specialist**: Google Gemini 2.0 Flash
+5. **Background Summarization**: Google Gemini 2.5 Flash Lite
 
 **Environment Configuration**
-- `AGENTICAI_DEFAULT_CHAT_MODEL` – default chat model (default: `qwen3.5-flash-02-23`).
-- `AGENTICAI_SYSTEM_PROMPT` – global system prompt to enforce a consistent persona.
-- `AGENTICAI_SUMMARY_MAX_TOKENS` – max tokens for compressed summaries (default: 400).
-- `AGENTICAI_TAG_EXTRACTION_MODEL` – model used for tag extraction (optional).
+- `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION` – AWS Bedrock credentials
+- `GEMINI_API_KEY` – Google AI Studio key
+- `COCKROACH_DATABASE_URL` – Cloud Serverless cluster URL
 
 ### Chat Enhancements
 - **Persistent chat history**: SQLite stores raw user and assistant turns.
@@ -166,9 +165,14 @@ data/
 ```
 
 - API keys in `.env` (never commit)
-- OpenRouter API key required
+- AWS Bedrock permissions and direct provider keys required
 - Windows background service via Tauri
-- MCP-style tool architecture
+- CockroachDB cloud-managed MCP-style tool architecture
+
+### CockroachSRE Database, Vector Store, & Bedrock Purge:
+- **CockroachDB Memory Store Migration (`src/memory/cockroach_store.py`)**: Migrated raw SQLite store to a fully PostgreSQL-wire-compatible CockroachDB memory layer. Created standard indexes, mapped chat history, global memories, role assignments, api keys, and tool calls. Dropped foreign key constraints from `messages` to allow flexible context payloads.
+- **pgvector Vector Store Migration (`src/memory/vector_store.py`)**: Replaced local ChromaDB instance with an inline pgvector store. Added `embedding VECTOR(384)` columns directly to `documents`, `messages`, and `user_memories` tables to store and retrieve vectors with native database joins. Configured local `SentenceTransformer('all-MiniLM-L6-v2')` model to execute 384-dimensional cosine distance matches (`<=>`) with 100% zero-quota free local embeddings.
+- **OpenRouter Purge & AWS Bedrock Dispatcher (`src/models/provider_router.py`)**: Completely purged OpenRouter connection clients, endpoint configurations, and silent pass-through fallbacks. Configured direct `boto3` client Converse API integrations to support AWS Bedrock reasoning models (e.g. Claude 3.5 Sonnet v2) with automatic key credential parsing and dynamic region matching. Added `bedrock` provider controls directly to Tauri UI settings drawer.
 
 ### Windows Native Migration, Terminal Fixes & Document RAG:
 - **Terminal Manager (`src/tools/terminal_manager.py`)**: Migrated to `pywinpty` on Windows. Fixed PTY read signature (`read(blocking=False)`). Implemented `clean_ansi()` logic with PSReadLine cursor-positioning code splitting (`\x1b[row;colH`) and prompt-grouping line filters to eliminate all intermediate typing typos (`ccdcd`, `llsls`).
