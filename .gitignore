@@ -49,6 +49,7 @@ data/*
 # Temporary files
 *.tmp
 *.temp
+z_DebugImages/
 
 # OS
 .DS_Store
