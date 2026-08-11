@@ -41,10 +41,10 @@ class ChatRouter:
         self.current_session_id = self.session_manager.current_session_id
     
     def initialize_client(self):
-        """Initialize OpenRouter client and ProviderRouter."""
+        """Initialize ProviderRouter."""
         from src.models.provider_router import ProviderRouter
         self.client = OpenRouterClient()
-        self.provider_router = ProviderRouter(self.client, self.memory_store)
+        self.provider_router = ProviderRouter(memory_store=self.memory_store)
     
     async def chat(
         self,

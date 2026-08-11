@@ -1,1 +1,0 @@
-{"jsonrpc":"2.0","method":"chat","params":{"message":"run ls command in terminal","use_tags":false,"use_summaries":false,"model_override":"qwen3.5-flash-02-23"},"id":"123"}

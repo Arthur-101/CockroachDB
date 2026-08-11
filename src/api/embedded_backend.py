@@ -451,7 +451,7 @@ class EmbeddedBackend:
             }
             
         from src.models.provider_router import ProviderRouter
-        router = ProviderRouter(self.router.client, self.memory)
+        router = ProviderRouter(memory_store=self.memory)
         res = await router.test_provider_key(provider, key_value, model_id)
         return {
             "jsonrpc": "2.0",
@@ -464,7 +464,7 @@ class EmbeddedBackend:
         from src.models.provider_router import ProviderRouter
         pr = ProviderRouter(memory_store=self.memory)
         
-        providers = ["openrouter", "google", "openai", "anthropic", "groq", "mistral"]
+        providers = ["bedrock", "google", "openai", "anthropic", "groq", "mistral"]
         all_models = []
         
         for prov in providers:

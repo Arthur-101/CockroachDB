@@ -74,18 +74,18 @@ export default function ChatPanel() {
     model_id: string;
   }
   const [roleModels, setRoleModels] = useState<Record<string, RoleConfig>>({
-    orchestrator: { provider: 'openrouter', model_id: 'qwen/qwen3.5-flash-02-23' },
-    coding: { provider: 'openrouter', model_id: 'deepseek/deepseek-v4-flash' },
-    reasoning: { provider: 'openrouter', model_id: 'deepseek/deepseek-v4-pro' },
-    multimodal: { provider: 'openrouter', model_id: 'google/gemini-2.5-flash-lite' },
-    synthesizer: { provider: 'openrouter', model_id: 'google/gemini-2.5-flash-lite' },
-    summary: { provider: 'openrouter', model_id: 'openai/gpt-oss-120b' },
+    orchestrator: { provider: 'google', model_id: 'gemini-2.0-flash' },
+    coding: { provider: 'google', model_id: 'gemini-2.0-flash' },
+    reasoning: { provider: 'bedrock', model_id: 'anthropic.claude-3-5-sonnet-20241022-v2:0' },
+    multimodal: { provider: 'google', model_id: 'gemini-2.0-flash' },
+    synthesizer: { provider: 'google', model_id: 'gemini-2.0-flash' },
+    summary: { provider: 'google', model_id: 'gemini-2.5-flash-lite' },
     stt: { provider: 'groq', model_id: 'whisper-large-v3' },
     tts: { provider: 'google', model_id: 'gemini-2.5-flash-tts' }
   });
   const [providerCatalog, setProviderCatalog] = useState<Record<string, Array<{id: string; name: string; cost_label: string; is_active: boolean}>>>({});
   const [apiKeys, setApiKeys] = useState<Array<{id: string; provider: string; label: string; masked_value: string; is_active: number}>>([]);
-  const [newProvider, setNewProvider] = useState<string>('openrouter');
+  const [newProvider, setNewProvider] = useState<string>('google');
   const [newKeyValue, setNewKeyValue] = useState<string>('');
   const [newKeyLabel, setNewKeyLabel] = useState<string>('');
   const [isTestingKey, setIsTestingKey] = useState<boolean>(false);
@@ -143,7 +143,7 @@ export default function ChatPanel() {
       console.error('Failed to load role models:', err);
     }
     // Pre-fetch catalogs for all supported providers
-    ['openrouter', 'google', 'openai', 'anthropic', 'groq', 'mistral'].forEach(p => loadProviderModels(p));
+    ['bedrock', 'google', 'openai', 'anthropic', 'groq', 'mistral'].forEach(p => loadProviderModels(p));
   };
 
   const loadTrackerData = async () => {
@@ -925,7 +925,7 @@ export default function ChatPanel() {
                               onChange={(newProv) => handleProviderChange(r.role, newProv)}
                               style={{ width: '100%' }}
                               options={[
-                                { value: 'openrouter', label: '🌐 OpenRouter' },
+                                { value: 'bedrock', label: '☁️ AWS Bedrock' },
                                 { value: 'google', label: '🟢 Google AI Studio' },
                                 { value: 'openai', label: '🤖 OpenAI' },
                                 { value: 'anthropic', label: '🧠 Anthropic' },
@@ -980,7 +980,7 @@ export default function ChatPanel() {
                         onChange={setNewProvider}
                         style={{ width: 160 }}
                         options={[
-                          { value: 'openrouter', label: 'OpenRouter' },
+                          { value: 'bedrock', label: 'AWS Bedrock' },
                           { value: 'openai', label: 'OpenAI' },
                           { value: 'google', label: 'Google AI Studio' },
                           { value: 'anthropic', label: 'Anthropic' },

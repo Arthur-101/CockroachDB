@@ -8,7 +8,7 @@ from typing import Dict, Any, List, Optional
 import urllib.request
 import urllib.error
 
-from src.models.openrouter_client import OpenRouterClient, Message
+from src.models.openrouter_client import Message
 from src.memory.cockroach_store import SQLiteMemoryStore
 from src.utils.config import config
 
@@ -17,168 +17,11 @@ logger = logging.getLogger(__name__)
 class ProviderRouter:
     """Unified router supporting OpenRouter, OpenAI, Google AI Studio, and Anthropic APIs."""
     
-    def __init__(self, openrouter_client: Optional[OpenRouterClient] = None, memory_store: Optional[SQLiteMemoryStore] = None):
-        self.openrouter_client = openrouter_client or OpenRouterClient()
+    def __init__(self, memory_store: Optional[SQLiteMemoryStore] = None):
         self.memory_store = memory_store or SQLiteMemoryStore()
 
-    def get_api_key_for_provider(self, provider: str) -> Optional[str]:
-        """Fetch active API key for provider from SQLite DB with .env fallback."""
-        provider_lower = provider.lower()
-        
-        # 1. Try SQLite Database first
-        try:
-            db_key = self.memory_store.get_api_key_by_provider(provider_lower)
-            if db_key and db_key.strip():
-                return db_key.strip()
-        except Exception as e:
-            logger.warning(f"Error fetching API key from SQLite for {provider}: {e}")
-
-        # 2. Fall back to environment variables
-        if provider_lower == "openrouter":
-            return getattr(config.settings, "openrouter_api_key", None) or os.getenv("OPENROUTER_API_KEY")
-        elif provider_lower in ["openai"]:
-            return os.getenv("OPENAI_API_KEY")
-        elif provider_lower in ["google", "gemini"]:
-            return os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-        elif provider_lower in ["anthropic", "claude"]:
-            return os.getenv("ANTHROPIC_API_KEY")
-        elif provider_lower in ["groq"]:
-            return os.getenv("GROQ_API_KEY")
-        elif provider_lower in ["mistral"]:
-            return os.getenv("MISTRAL_API_KEY")
-            
-        return None
-
-    async def generate(
-        self,
-        messages: List[Dict[str, Any]],
-        model_id: str,
-        temperature: float = 0.7,
-        max_tokens: int = 2000,
-    ) -> Dict[str, Any]:
-        """Route generation request to appropriate provider based on model ID prefix or configuration."""
-        raw_model = model_id.strip()
-        provider_name = "openrouter"
-        clean_model = raw_model
-
-        known_providers = ["google", "gemini", "openai", "anthropic", "claude", "groq", "mistral", "openrouter", "deepseek", "qwen"]
-        if ":" in raw_model:
-            parts = raw_model.split(":", 1)
-            prov = parts[0].lower().strip()
-            if "/" not in parts[0] and prov in known_providers:
-                provider_name = prov
-                clean_model = parts[1]
-            else:
-                clean_model = raw_model
-        elif raw_model.startswith("google/"):
-            provider_name = "google"
-            clean_model = raw_model.replace("google/", "")
-        elif raw_model.startswith("openai/"):
-            provider_name = "openai"
-            clean_model = raw_model.replace("openai/", "")
-        elif raw_model.startswith("anthropic/"):
-            provider_name = "anthropic"
-            clean_model = raw_model.replace("anthropic/", "")
-        elif raw_model.startswith("groq/"):
-            provider_name = "groq"
-            clean_model = raw_model.replace("groq/", "")
-        elif raw_model.startswith("mistral/"):
-            provider_name = "mistral"
-            clean_model = raw_model.replace("mistral/", "")
-        elif raw_model.startswith("openrouter/"):
-            provider_name = "openrouter"
-            clean_model = raw_model.replace("openrouter/", "")
-
-        provider_name = provider_name.lower().strip()
-
-        # 1. Google AI Studio Direct API
-        if provider_name in ["google", "gemini"]:
-            api_key = self.get_api_key_for_provider("google")
-            if api_key:
-                return await self._generate_google_direct(messages, clean_model, api_key, temperature, max_tokens)
-            else:
-                return {
-                    "success": False,
-                    "error": "No Google AI Studio API Key found. Please add your Google AI Studio API key in Settings -> Models & API Keys.",
-                    "content": "⚠️ No Google AI Studio API Key found. Please add your Google AI Studio API key in Settings -> Models & API Keys (or set GEMINI_API_KEY in .env) to use Google AI Studio.",
-                    "model_id": f"google/{clean_model}"
-                }
-
-        # 2. OpenAI Native Direct API
-        if provider_name in ["openai"]:
-            api_key = self.get_api_key_for_provider("openai")
-            if api_key:
-                return await self._generate_openai_direct(messages, clean_model, api_key, temperature, max_tokens)
-            else:
-                return {
-                    "success": False,
-                    "error": "No OpenAI API Key found. Please add your OpenAI API key in Settings -> Models & API Keys.",
-                    "content": "⚠️ No OpenAI API Key found. Please add your OpenAI API key in Settings -> Models & API Keys (or set OPENAI_API_KEY in .env) to use OpenAI.",
-                    "model_id": f"openai/{clean_model}"
-                }
-
-        # 3. Anthropic Direct API
-        if provider_name in ["anthropic", "claude"]:
-            api_key = self.get_api_key_for_provider("anthropic")
-            if api_key:
-                return await self._generate_anthropic_direct(messages, clean_model, api_key, temperature, max_tokens)
-            else:
-                return {
-                    "success": False,
-                    "error": "No Anthropic API Key found. Please add your Anthropic API key in Settings -> Models & API Keys.",
-                    "content": "⚠️ No Anthropic API Key found. Please add your Anthropic API key in Settings -> Models & API Keys (or set ANTHROPIC_API_KEY in .env) to use Anthropic.",
-                    "model_id": f"anthropic/{clean_model}"
-                }
-
-        # 4. Groq Direct API
-        if provider_name in ["groq"]:
-            api_key = self.get_api_key_for_provider("groq")
-            if api_key:
-                return await self._generate_groq_direct(messages, clean_model, api_key, temperature, max_tokens)
-            else:
-                return {
-                    "success": False,
-                    "error": "No Groq API Key found. Please add your Groq API key in Settings -> Models & API Keys.",
-                    "content": "⚠️ No Groq API Key found. Please add your Groq API key in Settings -> Models & API Keys (or set GROQ_API_KEY in .env) to use Groq.",
-                    "model_id": f"groq/{clean_model}"
-                }
-
-        # 5. Mistral Direct API
-        if provider_name in ["mistral"]:
-            api_key = self.get_api_key_for_provider("mistral")
-            if api_key:
-                return await self._generate_mistral_direct(messages, clean_model, api_key, temperature, max_tokens)
-            # If no native Mistral API key set, fall through to OpenRouter with mistralai/ prefix!
-
-        # 6. OpenRouter API
-        formatted_model = clean_model
-        model_lower = clean_model.lower()
-        if "gemini" in model_lower and not model_lower.startswith("google/"):
-            formatted_model = f"google/{clean_model}"
-        elif "deepseek" in model_lower and not model_lower.startswith("deepseek/"):
-            formatted_model = f"deepseek/{clean_model}"
-        elif "qwen" in model_lower and not model_lower.startswith("qwen/"):
-            formatted_model = f"qwen/{clean_model}"
-        elif "claude" in model_lower and not model_lower.startswith("anthropic/"):
-            formatted_model = f"anthropic/{clean_model}"
-        elif ("mistral" in model_lower or "codestral" in model_lower) and not model_lower.startswith("mistralai/"):
-            formatted_model = f"mistralai/{clean_model}"
-
-        from src.models.openrouter_client import Message
-        msg_objs = [Message(role=m.get("role", "user"), content=m.get("content", "")) for m in messages]
-        resp = await self.openrouter_client.chat_completion(
-            messages=msg_objs,
-            model_type=formatted_model,
-            temperature=temperature,
-            max_tokens=max_tokens
-        )
-        content = ""
-        if resp.choices:
-            content = resp.choices[0].get("message", {}).get("content", "")
-        tokens = resp.usage.total_tokens if resp.usage else 0
-        return {"content": content, "model_id": formatted_model, "tokens_used": tokens, "success": True}
-
     @staticmethod
+
     def get_model_pricing_sync(model_id: str) -> Dict[str, float]:
         """
         Synchronously look up approximate input/output pricing (per million tokens)
@@ -256,44 +99,15 @@ class ProviderRouter:
         api_key = self.get_api_key_for_provider(provider_lower)
 
 
-        # 1. OpenRouter Catalog
-        if provider_lower == "openrouter":
-            try:
-                loop = asyncio.get_event_loop()
-                req = urllib.request.Request("https://openrouter.ai/api/v1/models")
-                res = await loop.run_in_executor(None, lambda: urllib.request.urlopen(req, timeout=10.0))
-                data = json.loads(res.read().decode("utf-8"))
-                models = []
-                for item in data.get("data", []):
-                    model_id = item.get("id", "")
-                    name = item.get("name", model_id)
-                    pricing = item.get("pricing", {})
-                    
-                    try:
-                        p_in = float(pricing.get("prompt", "0")) * 1_000_000
-                        p_out = float(pricing.get("completion", "0")) * 1_000_000
-                        cost_str = f"${p_in:.2f}/1M in, ${p_out:.2f}/1M out" if (p_in > 0 or p_out > 0) else "Free / Included"
-                    except Exception:
-                        cost_str = "Standard Pricing"
-                        
-                    models.append({
-                        "id": model_id,
-                        "name": name,
-                        "provider": "openrouter",
-                        "cost_label": cost_str,
-                        "is_active": True,
-                        "context_length": item.get("context_length", 0)
-                    })
-                return models
-            except Exception as e:
-                logger.warning(f"Failed to fetch OpenRouter model catalog dynamically: {e}")
-                return [
-                    {"id": "qwen/qwen3.5-flash-02-23", "name": "Qwen 3.5 Flash", "provider": "openrouter", "cost_label": "$0.10/1M in, $0.30/1M out", "is_active": True},
-                    {"id": "deepseek/deepseek-v4-flash", "name": "DeepSeek V4 Flash", "provider": "openrouter", "cost_label": "$0.14/1M in, $0.28/1M out", "is_active": True},
-                    {"id": "deepseek/deepseek-v4-pro", "name": "DeepSeek V4 Pro", "provider": "openrouter", "cost_label": "$0.55/1M in, $2.19/1M out", "is_active": True},
-                    {"id": "google/gemini-2.5-flash-lite", "name": "Gemini 2.5 Flash Lite", "provider": "openrouter", "cost_label": "$0.075/1M in, $0.30/1M out", "is_active": True},
-                    {"id": "anthropic/claude-3.5-sonnet", "name": "Claude 3.5 Sonnet", "provider": "openrouter", "cost_label": "$3.00/1M in, $15.00/1M out", "is_active": True},
-                ]
+        # 1. AWS Bedrock Catalog
+        if provider_lower == "bedrock":
+            # Direct static catalog for AWS Bedrock models
+            return [
+                {"id": "anthropic.claude-3-5-sonnet-20241022-v2:0", "name": "Claude 3.5 Sonnet v2", "provider": "bedrock", "cost_label": "$3.00/1M in, $15.00/1M out", "is_active": True},
+                {"id": "anthropic.claude-3-5-haiku-20241022-v1:0", "name": "Claude 3.5 Haiku", "provider": "bedrock", "cost_label": "$0.80/1M in, $4.00/1M out", "is_active": True},
+                {"id": "anthropic.claude-3-opus-20240229-v1:0", "name": "Claude 3 Opus", "provider": "bedrock", "cost_label": "$15.00/1M in, $75.00/1M out", "is_active": True},
+                {"id": "amazon.titan-text-express-v1", "name": "Titan Text Express", "provider": "bedrock", "cost_label": "$0.20/1M in, $0.60/1M out", "is_active": True},
+            ]
 
         # 2. Google AI Studio Catalog
         elif provider_lower in ["google", "gemini"]:
@@ -445,24 +259,30 @@ class ProviderRouter:
         test_message = [{"role": "user", "content": "Ping test. Respond with OK."}]
         
         try:
-            if provider_lower == "openrouter":
-                target_model = model_id or "qwen/qwen3.5-flash-02-23"
-                headers = {
-                    "Authorization": f"Bearer {key_str}",
-                    "Content-Type": "application/json",
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-                }
-                payload = json.dumps({
-                    "model": target_model,
-                    "messages": test_message,
-                    "max_tokens": 10
-                }).encode("utf-8")
-                
-                req = urllib.request.Request("https://openrouter.ai/api/v1/chat/completions", data=payload, headers=headers, method="POST")
+            if provider_lower == "bedrock":
+                # Parse credentials dictionary
+                credentials = self.get_api_key_for_provider("bedrock")
+                if not credentials or not credentials.get("aws_secret_access_key"):
+                    return {"success": False, "error": "No Bedrock credentials found. Please set AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY."}
+
+                import boto3
                 loop = asyncio.get_event_loop()
-                response = await loop.run_in_executor(None, lambda: urllib.request.urlopen(req, timeout=10.0))
-                res_data = json.loads(response.read().decode("utf-8"))
-                return {"success": True, "message": "OpenRouter API Key verified successfully!", "details": res_data.get("choices", [{}])[0].get("message", {}).get("content", "")}
+                client = await loop.run_in_executor(
+                    None,
+                    lambda: boto3.client(
+                        service_name="bedrock",
+                        region_name=credentials.get("region_name", "us-east-1"),
+                        aws_access_key_id=credentials.get("aws_access_key_id"),
+                        aws_secret_access_key=credentials.get("aws_secret_access_key")
+                    )
+                )
+                res = await loop.run_in_executor(None, lambda: client.list_foundation_models(byProvider="anthropic"))
+                model_count = len(res.get("modelSummaries", []))
+                return {
+                    "success": True,
+                    "message": f"AWS Bedrock credentials verified successfully! ({model_count} Anthropic models available)",
+                    "details": f"Connection verified. Region: {client.meta.region_name}"
+                }
 
             elif provider_lower == "openai":
                 headers = {
@@ -537,8 +357,8 @@ class ProviderRouter:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    def get_api_key_for_provider(self, provider: str) -> Optional[str]:
-        """Fetch active API key for provider from SQLite DB with .env fallback."""
+    def get_api_key_for_provider(self, provider: str) -> Any:
+        """Fetch active API key/credentials for provider from SQLite DB with .env fallback."""
         provider_lower = provider.lower().strip()
         if provider_lower in ["mistralai", "codestral"]:
             provider_lower = "mistral"
@@ -547,7 +367,24 @@ class ProviderRouter:
         elif provider_lower in ["claude"]:
             provider_lower = "anthropic"
         
-        # 1. Try SQLite Database first
+        # 1. Special case: AWS Bedrock credentials dictionary lookup
+        if provider_lower == "bedrock":
+            try:
+                db_key = self.memory_store.get_api_key_by_provider("bedrock")
+                if db_key and db_key.strip():
+                    try:
+                        return json.loads(db_key)
+                    except json.JSONDecodeError:
+                        return {"aws_secret_access_key": db_key}
+            except Exception:
+                pass
+            return {
+                "aws_access_key_id": os.getenv("AWS_ACCESS_KEY_ID"),
+                "aws_secret_access_key": os.getenv("AWS_SECRET_ACCESS_KEY"),
+                "region_name": os.getenv("AWS_REGION", "us-east-1")
+            }
+
+        # 2. Try SQLite Database first for standard providers
         try:
             db_key = self.memory_store.get_api_key_by_provider(provider_lower)
             if db_key and db_key.strip():
@@ -555,10 +392,8 @@ class ProviderRouter:
         except Exception as e:
             logger.warning(f"Error fetching API key from SQLite for {provider}: {e}")
 
-        # 2. Fall back to environment variables
-        if provider_lower == "openrouter":
-            return getattr(config.settings, "openrouter_api_key", None) or os.getenv("OPENROUTER_API_KEY")
-        elif provider_lower in ["openai"]:
+        # 3. Fall back to environment variables
+        if provider_lower in ["openai"]:
             return os.getenv("OPENAI_API_KEY")
         elif provider_lower in ["google", "gemini"]:
             return os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
@@ -580,13 +415,13 @@ class ProviderRouter:
         tools: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         """Route generation request to appropriate provider with tool calling support.
-        Supports 5x rate-limiting retry loop and strictly avoids silent fallback to OpenRouter.
+        Supports AWS Bedrock, Google, OpenAI, Anthropic, Groq, and Mistral.
         """
         raw_model = model_id.strip()
-        provider_name = "openrouter"
+        provider_name = "google"  # Default fallback if no prefix
         clean_model = raw_model
 
-        known_providers = ["google", "gemini", "openai", "anthropic", "claude", "groq", "mistral", "mistralai", "codestral", "openrouter", "deepseek", "qwen"]
+        known_providers = ["google", "gemini", "openai", "anthropic", "claude", "groq", "mistral", "mistralai", "codestral", "bedrock"]
         if ":" in raw_model:
             parts = raw_model.split(":", 1)
             prov = parts[0].lower().strip()
@@ -610,9 +445,9 @@ class ProviderRouter:
         elif raw_model.startswith("mistral/") or raw_model.startswith("mistralai/") or raw_model.startswith("codestral/"):
             provider_name = "mistral"
             clean_model = raw_model.split("/", 1)[1]
-        elif raw_model.startswith("openrouter/"):
-            provider_name = "openrouter"
-            clean_model = raw_model.replace("openrouter/", "")
+        elif raw_model.startswith("bedrock/"):
+            provider_name = "bedrock"
+            clean_model = raw_model.replace("bedrock/", "")
 
         provider_name = provider_name.lower().strip()
         max_attempts = 5
@@ -674,47 +509,24 @@ class ProviderRouter:
                     }
                 return await self._generate_mistral_direct(messages, clean_model, api_key, temperature, max_tokens, tools)
 
+            elif provider_name in ["bedrock"]:
+                credentials = self.get_api_key_for_provider("bedrock")
+                if not credentials or not credentials.get("aws_secret_access_key"):
+                    return {
+                        "success": False,
+                        "error": "No AWS Bedrock credentials found. Please add them in Settings or set AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY in .env.",
+                        "content": "⚠️ No AWS Bedrock credentials found. Please configure AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and AWS_REGION to use Bedrock.",
+                        "model_id": f"bedrock/{clean_model}"
+                    }
+                return await self._generate_bedrock_direct(messages, clean_model, credentials, temperature, max_tokens)
+
             else:
-                # OpenRouter API
-                formatted_model = clean_model
-                model_lower = clean_model.lower()
-                if "gemini" in model_lower and not model_lower.startswith("google/"):
-                    formatted_model = f"google/{clean_model}"
-                elif "deepseek" in model_lower and not model_lower.startswith("deepseek/"):
-                    formatted_model = f"deepseek/{clean_model}"
-                elif "qwen" in model_lower and not model_lower.startswith("qwen/"):
-                    formatted_model = f"qwen/{clean_model}"
-                elif "claude" in model_lower and not model_lower.startswith("anthropic/"):
-                    formatted_model = f"anthropic/{clean_model}"
-                elif ("mistral" in model_lower or "codestral" in model_lower or "pixtral" in model_lower) and not model_lower.startswith("mistralai/"):
-                    formatted_model = f"mistralai/{clean_model}"
-
-                from src.models.openrouter_client import Message
-                msg_objs = []
-                for m in messages:
-                    if isinstance(m, dict):
-                        msg_objs.append(Message(role=m.get("role", "user"), content=m.get("content", ""), tool_calls=m.get("tool_calls"), tool_call_id=m.get("tool_call_id")))
-                    elif isinstance(m, Message):
-                        msg_objs.append(m)
-
-                try:
-                    resp = await self.openrouter_client.chat_completion(
-                        messages=msg_objs,
-                        model_type=formatted_model,
-                        temperature=temperature,
-                        max_tokens=max_tokens,
-                        tools=tools
-                    )
-                    content = ""
-                    tool_calls = None
-                    if resp.choices:
-                        choice_msg = resp.choices[0].get("message", {})
-                        content = choice_msg.get("content", "")
-                        tool_calls = choice_msg.get("tool_calls", None)
-                    tokens = resp.usage.total_tokens if resp.usage else 0
-                    return {"content": content, "tool_calls": tool_calls, "model_id": formatted_model, "tokens_used": tokens, "success": True}
-                except Exception as e:
-                    return {"success": False, "error": str(e), "model_id": formatted_model}
+                return {
+                    "success": False,
+                    "error": f"Unsupported provider: {provider_name}.",
+                    "content": f"⚠️ Unsupported provider [{provider_name}] requested for model: {clean_model}.",
+                    "model_id": model_id
+                }
 
         # ── Attempt dispatching loop with 10-second retry delay for rate limits ──
         for attempt in range(1, max_attempts + 1):
@@ -1286,3 +1098,88 @@ class ProviderRouter:
         except Exception as e:
             logger.error(f"Mistral Direct API error: {e}")
             return {"success": False, "error": str(e), "model_id": f"mistral/{clean_model}"}
+
+    async def _generate_bedrock_direct(
+        self,
+        messages: List[Dict[str, Any]],
+        model_name: str,
+        credentials: Dict[str, str],
+        temperature: float,
+        max_tokens: int,
+    ) -> Dict[str, Any]:
+        """Direct call to AWS Bedrock Converse API using boto3."""
+        from src.models.openrouter_client import extract_text_content
+        import boto3
+
+        clean_model = model_name.replace("bedrock/", "").strip()
+        
+        try:
+            loop = asyncio.get_event_loop()
+            client = await loop.run_in_executor(
+                None,
+                lambda: boto3.client(
+                    service_name="bedrock-runtime",
+                    region_name=credentials.get("region_name", "us-east-1"),
+                    aws_access_key_id=credentials.get("aws_access_key_id"),
+                    aws_secret_access_key=credentials.get("aws_secret_access_key")
+                )
+            )
+        except Exception as e:
+            logger.error(f"Failed to create boto3 client: {e}")
+            return {"success": False, "error": f"Failed to create Bedrock client: {str(e)}", "model_id": f"bedrock/{clean_model}"}
+
+        bedrock_messages = []
+        system_prompts = []
+
+        for m in messages:
+            role = m.get("role", "user")
+            content_text = extract_text_content(m.get("content", ""))
+            
+            if role == "system":
+                system_prompts.append({"text": content_text})
+            else:
+                bedrock_messages.append({
+                    "role": role if role in ["user", "assistant"] else "user",
+                    "content": [{"text": content_text}]
+                })
+
+        bedrock_model_id = clean_model
+        # Map generic naming to Bedrock Claude identifiers if needed
+        model_lower = clean_model.lower()
+        if "claude-3-5-sonnet" in model_lower:
+            bedrock_model_id = "anthropic.claude-3-5-sonnet-20241022-v2:0"
+        elif "claude-3-5-haiku" in model_lower:
+            bedrock_model_id = "anthropic.claude-3-5-haiku-20241022-v1:0"
+        elif "claude-3-opus" in model_lower:
+            bedrock_model_id = "anthropic.claude-3-opus-20240229-v1:0"
+
+        try:
+            def call_bedrock():
+                kwargs = {
+                    "modelId": bedrock_model_id,
+                    "messages": bedrock_messages,
+                    "inferenceConfig": {
+                        "temperature": temperature,
+                        "maxTokens": max_tokens
+                    }
+                }
+                if system_prompts:
+                    kwargs["system"] = system_prompts
+                return client.converse(**kwargs)
+
+            response = await loop.run_in_executor(None, call_bedrock)
+            
+            output_text = response['output']['message']['content'][0]['text']
+            tokens = response.get('usage', {}).get('totalTokens', 0)
+            
+            return {
+                "content": output_text,
+                "tool_calls": None,
+                "model_id": f"bedrock/{clean_model}",
+                "tokens_used": tokens,
+                "success": True
+            }
+        except Exception as e:
+            logger.error(f"AWS Bedrock Direct API error: {e}")
+            return {"success": False, "error": str(e), "model_id": f"bedrock/{clean_model}"}
+

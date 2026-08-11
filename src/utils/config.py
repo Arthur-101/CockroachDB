@@ -9,9 +9,6 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
-    # ── OpenRouter API ───────────────────────────────────────
-    openrouter_api_key: str = Field(..., description="OpenRouter API key")
-    openrouter_base_url: str = "https://openrouter.ai/api/v1"
 
     # ── Memory configuration ─────────────────────────────────
     sqlite_db_path: str = "data/agenticai.db"

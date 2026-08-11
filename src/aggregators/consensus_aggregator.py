@@ -11,9 +11,8 @@ from src.memory.redis_store import redis_store
 class ConsensusAggregator:
     """Synthesizes parallel sub-agent outputs into a unified master response."""
     
-    def __init__(self, openrouter_client):
-        self.client = openrouter_client
-        self.provider_router = ProviderRouter(openrouter_client)
+    def __init__(self, openrouter_client=None):
+        self.provider_router = ProviderRouter()
 
     def _get_synthesizer_model(self) -> str:
         """Fetch synthesizer role model override from Redis or SQLite."""
@@ -26,7 +25,7 @@ class ConsensusAggregator:
             if "synthesizer" in db_roles:
                 item = db_roles["synthesizer"]
                 if isinstance(item, dict):
-                    p = item.get("provider", "openrouter")
+                    p = item.get("provider", "google")
                     m = item.get("model_id", "")
                     if m:
                         return f"{p}:{m}"
@@ -34,7 +33,7 @@ class ConsensusAggregator:
                     return item.strip()
         except Exception:
             pass
-        return "openrouter:google/gemini-2.5-flash-lite"
+        return "google:gemini-2.0-flash"
         
     async def synthesize_response(
         self,

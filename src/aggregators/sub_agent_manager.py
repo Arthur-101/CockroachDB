@@ -90,11 +90,10 @@ class SubAgentManager:
 
     RELAY_PREFIX = "RELAY_REQUEST:"
 
-    def __init__(self, openrouter_client, memory_store=None):
-        self.client = openrouter_client
-        self.provider_router = ProviderRouter(openrouter_client, memory_store=memory_store)
+    def __init__(self, openrouter_client=None, memory_store=None):
+        self.provider_router = ProviderRouter(memory_store=memory_store)
 
-    def _get_dynamic_model_for_role(self, role: str, default_model: str = "openrouter:qwen/qwen3.5-flash-02-23") -> str:
+    def _get_dynamic_model_for_role(self, role: str, default_model: str = "google:gemini-2.0-flash") -> str:
         """Fetch role model override from Redis or SQLite if available."""
         # 1. Try Redis
         if redis_store.is_connected():
@@ -107,7 +106,7 @@ class SubAgentManager:
             if role.lower() in db_roles:
                 item = db_roles[role.lower()]
                 if isinstance(item, dict):
-                    prov = item.get("provider", "openrouter")
+                    prov = item.get("provider", "google")
                     mid = item.get("model_id", "")
                     if mid:
                         return f"{prov}:{mid}"
