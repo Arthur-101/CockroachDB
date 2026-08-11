@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "tauri-app",
+  "productName": "CockroachSRE",
   "version": "0.1.0",
   "identifier": "com.saurav.tauri-app",
   "build": {
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "AgenticAI Studio",
+        "title": "CockroachSRE Console & Studio",
         "width": 1200,
         "height": 800,
         "visible": true,

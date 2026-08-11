@@ -568,6 +568,107 @@ async fn save_model_note(
     Ok(result)
 }
 
+#[tauri::command]
+async fn get_incidents(
+    app_handle: tauri::AppHandle,
+    status: Option<String>,
+    severity: Option<String>,
+    serviceName: Option<String>,
+    service_name: Option<String>,
+    limit: Option<i64>
+) -> Result<serde_json::Value, String> {
+    let service = service_name.or(serviceName);
+    let params = json!({
+        "status": status,
+        "severity": severity,
+        "service_name": service,
+        "limit": limit.unwrap_or(20),
+        "request_id": Uuid::new_v4().to_string()
+    });
+    let result = send_json_rpc(&app_handle, "get_incidents", params, None).await?;
+    Ok(result)
+}
+
+#[tauri::command]
+async fn ingest_incident(
+    app_handle: tauri::AppHandle,
+    title: String,
+    description: Option<String>,
+    severity: Option<String>,
+    serviceName: Option<String>,
+    service_name: Option<String>,
+    status: Option<String>,
+    metadata: Option<String>
+) -> Result<serde_json::Value, String> {
+    let service = service_name.or(serviceName);
+    let params = json!({
+        "title": title,
+        "description": description,
+        "severity": severity.unwrap_or_else(|| "P3".to_string()),
+        "service_name": service,
+        "status": status.unwrap_or_else(|| "NEW".to_string()),
+        "metadata": metadata,
+        "request_id": Uuid::new_v4().to_string()
+    });
+    let result = send_json_rpc(&app_handle, "ingest_incident", params, None).await?;
+    Ok(result)
+}
+
+#[tauri::command]
+async fn get_runbooks(
+    app_handle: tauri::AppHandle,
+    serviceName: Option<String>,
+    service_name: Option<String>,
+    limit: Option<i64>
+) -> Result<serde_json::Value, String> {
+    let service = service_name.or(serviceName);
+    let params = json!({
+        "service_name": service,
+        "limit": limit.unwrap_or(20),
+        "request_id": Uuid::new_v4().to_string()
+    });
+    let result = send_json_rpc(&app_handle, "get_runbooks", params, None).await?;
+    Ok(result)
+}
+
+#[tauri::command]
+async fn save_runbook(
+    app_handle: tauri::AppHandle,
+    title: String,
+    content: String,
+    serviceName: Option<String>,
+    service_name: Option<String>,
+    author: Option<String>
+) -> Result<serde_json::Value, String> {
+    let service = service_name.or(serviceName);
+    let params = json!({
+        "title": title,
+        "content": content,
+        "service_name": service,
+        "author": author.unwrap_or_else(|| "SRE Assistant".to_string()),
+        "request_id": Uuid::new_v4().to_string()
+    });
+    let result = send_json_rpc(&app_handle, "save_runbook", params, None).await?;
+    Ok(result)
+}
+
+#[tauri::command]
+async fn get_fix_history(
+    app_handle: tauri::AppHandle,
+    incidentId: Option<String>,
+    incident_id: Option<String>,
+    limit: Option<i64>
+) -> Result<serde_json::Value, String> {
+    let inc = incident_id.or(incidentId);
+    let params = json!({
+        "incident_id": inc,
+        "limit": limit.unwrap_or(20),
+        "request_id": Uuid::new_v4().to_string()
+    });
+    let result = send_json_rpc(&app_handle, "get_fix_history", params, None).await?;
+    Ok(result)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -713,6 +814,11 @@ pub fn run() {
             add_mcp_server,
             delete_mcp_server,
             get_mcp_logs,
+            get_incidents,
+            ingest_incident,
+            get_runbooks,
+            save_runbook,
+            get_fix_history,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

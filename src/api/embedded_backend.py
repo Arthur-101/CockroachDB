@@ -100,6 +100,16 @@ class EmbeddedBackend:
                 return self._handle_delete_mcp_server(params)
             elif method == "get_mcp_logs":
                 return self._handle_get_mcp_logs(params)
+            elif method == "get_incidents":
+                return self._handle_get_incidents(params)
+            elif method == "ingest_incident":
+                return self._handle_ingest_incident(params)
+            elif method == "get_runbooks":
+                return self._handle_get_runbooks(params)
+            elif method == "save_runbook":
+                return self._handle_save_runbook(params)
+            elif method == "get_fix_history":
+                return self._handle_get_fix_history(params)
             else:
                 return {
                     "jsonrpc": "2.0",
@@ -615,6 +625,127 @@ class EmbeddedBackend:
             return {
                 "jsonrpc": "2.0",
                 "result": {"success": True, "logs": logs},
+                "id": params.get("request_id")
+            }
+        except Exception as e:
+            return {
+                "jsonrpc": "2.0",
+                "result": {"success": False, "message": str(e)},
+                "id": params.get("request_id")
+            }
+
+
+    def _handle_get_incidents(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Retrieve recent incidents, optionally filtered by status/severity/service."""
+        try:
+            status = params.get("status")
+            severity = params.get("severity")
+            service_name = params.get("service_name") or params.get("serviceName")
+            limit = params.get("limit", 20)
+            
+            incidents = self.memory.get_incidents(
+                status=status,
+                severity=severity,
+                service_name=service_name,
+                limit=limit
+            )
+            return {
+                "jsonrpc": "2.0",
+                "result": {"success": True, "incidents": incidents},
+                "id": params.get("request_id")
+            }
+        except Exception as e:
+            return {
+                "jsonrpc": "2.0",
+                "result": {"success": False, "message": str(e)},
+                "id": params.get("request_id")
+            }
+
+    def _handle_ingest_incident(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Ingest a new SRE incident and trigger vector embeddings generation."""
+        try:
+            from src.tools.basic_tools import BasicTools
+            bt = BasicTools(require_permission=False)
+            
+            res = bt.ingest_incident(
+                title=params.get("title", ""),
+                description=params.get("description"),
+                severity=params.get("severity", "P3"),
+                service_name=params.get("service_name") or params.get("serviceName"),
+                status=params.get("status", "NEW"),
+                metadata=params.get("metadata")
+            )
+            return {
+                "jsonrpc": "2.0",
+                "result": res,
+                "id": params.get("request_id")
+            }
+        except Exception as e:
+            return {
+                "jsonrpc": "2.0",
+                "result": {"success": False, "message": str(e)},
+                "id": params.get("request_id")
+            }
+
+    def _handle_get_runbooks(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Retrieve recent SRE runbooks."""
+        try:
+            service_name = params.get("service_name") or params.get("serviceName")
+            limit = params.get("limit", 20)
+            
+            runbooks = self.memory.get_runbooks(
+                service_name=service_name,
+                limit=limit
+            )
+            return {
+                "jsonrpc": "2.0",
+                "result": {"success": True, "runbooks": runbooks},
+                "id": params.get("request_id")
+            }
+        except Exception as e:
+            return {
+                "jsonrpc": "2.0",
+                "result": {"success": False, "message": str(e)},
+                "id": params.get("request_id")
+            }
+
+    def _handle_save_runbook(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Save a new runbook playbook and trigger vector indexing."""
+        try:
+            from src.tools.basic_tools import BasicTools
+            bt = BasicTools(require_permission=False)
+            
+            res = bt.save_runbook(
+                title=params.get("title", ""),
+                content=params.get("content", ""),
+                service_name=params.get("service_name") or params.get("serviceName"),
+                author=params.get("author", "SRE Assistant")
+            )
+            return {
+                "jsonrpc": "2.0",
+                "result": res,
+                "id": params.get("request_id")
+            }
+        except Exception as e:
+            return {
+                "jsonrpc": "2.0",
+                "result": {"success": False, "message": str(e)},
+                "id": params.get("request_id")
+            }
+
+    def _handle_get_fix_history(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Retrieve resolution fix history."""
+        try:
+            incident_id = params.get("incident_id") or params.get("incidentId")
+            limit = params.get("limit", 20)
+            
+            history = self.memory.get_fix_history(
+                incident_id=incident_id,
+                limit=limit
+            )
+            return {
+                "jsonrpc": "2.0",
+                "result": {"success": True, "fix_history": history},
                 "id": params.get("request_id")
             }
         except Exception as e:

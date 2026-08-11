@@ -44,36 +44,31 @@ The application is structured into a modular agent-host architecture:
 
 ## System Architecture
 
-```
-                     ┌──────────────────┐
-                     │    User Input    │
-                     └────────┬─────────┘
-                              │
-                              ▼
-                     ┌──────────────────┐
-                     │   Orchestrator   │ (AWS Bedrock / Gemini 2.0)
-                     └────────┬─────────┘
-                              │ (Decomposes & Selects)
-                              ▼
-             ┌────────────────┼────────────────┐
-             │                │                │
-             ▼                ▼                ▼
-      ┌────────────┐   ┌────────────┐   ┌────────────┐
-      │ Sub-Agent  │   │ Sub-Agent  │   │ Cockroach  │
-      │  (Coding)  │   │(Reasoning) │   │ MCP Server │
-      └──────┬─────┘   └─────┬──────┘   └─────┬──────┘
-             │                │                │
-             └────────────────┼────────────────┘
-                              │ (Submits Proposals)
-                              ▼
-                     ┌──────────────────┐
-                     │    Synthesizer   │ (Consensus Aggregator)
-                     └────────┬─────────┘
-                              │ (Consensus Analysis)
-                              ▼
-                     ┌──────────────────┐
-                     │   Final Output   │
-                     └──────────────────┘
+```mermaid
+graph TD
+    User([SRE Engineer / Alert Ingest]) -->|Trigger Alert/Incident| UI[Tauri React Desktop Client]
+    
+    subgraph Client App
+        UI -->|IPC Calls| Rust[Tauri Rust Bridge]
+        Rust -->|stdin/stdout JSON-RPC| PyAPI[Python Embedded Backend API]
+    end
+
+    subgraph Memory & Caching
+        PyAPI -->|Broadcast PubSub / Locks| Redis[(Portable Redis cache & Sync)]
+        PyAPI -->|Store chats, logs, incidents, keys| CRDB[(CockroachDB Cloud Serverless)]
+        PyAPI -->|Cosine similarity search <=>| CRDB
+    end
+
+    subgraph LLM Orchestration & Tool Execution
+        PyAPI -->|Orchestrate workflow| Bedrock[AWS Bedrock - Claude 3.5 Sonnet]
+        PyAPI -->|Generate code & terminal scripts| Gemini[Google AI Studio - Gemini 2.0]
+        
+        PyAPI -->|Expose local commands & logs| Terminal[Stateful PTY Terminal WinPTY]
+        PyAPI -->|Discovered APIs & Context| MCP[MCP Servers Host Stdio/SSE]
+    end
+    
+    PyAPI -->|Synthesize answers| Synthesizer[Consensus Synthesizer]
+    Synthesizer -->|Render responses & update status| UI
 ```
 
 ---

@@ -27,7 +27,8 @@ import {
   SearchOutlined,
   TableOutlined,
   ApiOutlined,
-  SyncOutlined
+  SyncOutlined,
+  AlertOutlined
 } from '@ant-design/icons';
 const { Dragger } = Upload;
 import { useState, useEffect, useRef } from 'react';
@@ -119,6 +120,26 @@ export default function ChatPanel() {
   const [mcpArgsStr, setMcpArgsStr] = useState('');
   const [mcpEnvStr, setMcpEnvStr] = useState('');
   const [mcpEnabled, setMcpEnabled] = useState(true);
+
+  // SRE State Hooks
+  const [sreIncidents, setSreIncidents] = useState<any[]>([]);
+  const [sreRunbooks, setSreRunbooks] = useState<any[]>([]);
+  const [sreFixHistory, setSreFixHistory] = useState<any[]>([]);
+  const [isLoadingSre, setIsLoadingSre] = useState<boolean>(false);
+  const [isIncidentModalOpen, setIsIncidentModalOpen] = useState<boolean>(false);
+  const [isRunbookModalOpen, setIsRunbookModalOpen] = useState<boolean>(false);
+
+  // SRE Form Hooks
+  const [incTitle, setIncTitle] = useState('');
+  const [incDesc, setIncDesc] = useState('');
+  const [incSeverity, setIncSeverity] = useState('P3');
+  const [incService, setIncService] = useState('');
+  const [incMetadata, setIncMetadata] = useState('');
+
+  const [rbTitle, setRbTitle] = useState('');
+  const [rbContent, setRbContent] = useState('');
+  const [rbService, setRbService] = useState('');
+  const [rbAuthor, setRbAuthor] = useState('');
 
   const loadProviderModels = async (provider: string) => {
     try {
@@ -821,6 +842,89 @@ export default function ChatPanel() {
     setMcpEnabled(true);
   };
 
+  const loadSreData = async () => {
+    setIsLoadingSre(true);
+    try {
+      const incRes: any = await invoke('get_incidents', { limit: 30 });
+      if (incRes?.incidents) {
+        setSreIncidents(incRes.incidents);
+      }
+      
+      const rbRes: any = await invoke('get_runbooks', { limit: 30 });
+      if (rbRes?.runbooks) {
+        setSreRunbooks(rbRes.runbooks);
+      }
+      
+      const fixRes: any = await invoke('get_fix_history', { limit: 30 });
+      if (fixRes?.fix_history) {
+        setSreFixHistory(fixRes.fix_history);
+      }
+    } catch (error) {
+      console.error('Failed to load SRE database logs:', error);
+    } finally {
+      setIsLoadingSre(false);
+    }
+  };
+
+  const handleIngestIncident = async () => {
+    if (!incTitle.trim()) {
+      antdMessage.warning('Incident title is required');
+      return;
+    }
+    try {
+      const res: any = await invoke('ingest_incident', {
+        title: incTitle.trim(),
+        description: incDesc.trim() || null,
+        severity: incSeverity,
+        serviceName: incService.trim() || null,
+        status: 'NEW',
+        metadata: incMetadata.trim() || null
+      });
+      if (res?.success) {
+        antdMessage.success('Production incident logged and vector-indexed successfully!');
+        setIsIncidentModalOpen(false);
+        setIncTitle('');
+        setIncDesc('');
+        setIncSeverity('P3');
+        setIncService('');
+        setIncMetadata('');
+        loadSreData();
+      } else {
+        antdMessage.error(res?.message || 'Failed to ingest incident');
+      }
+    } catch (error) {
+      antdMessage.error(`Error ingesting incident: ${error}`);
+    }
+  };
+
+  const handleSaveRunbook = async () => {
+    if (!rbTitle.trim() || !rbContent.trim()) {
+      antdMessage.warning('Runbook title and content are required');
+      return;
+    }
+    try {
+      const res: any = await invoke('save_runbook', {
+        title: rbTitle.trim(),
+        content: rbContent.trim(),
+        serviceName: rbService.trim() || null,
+        author: rbAuthor.trim() || 'SRE Assistant'
+      });
+      if (res?.success) {
+        antdMessage.success('SRE Runbook saved and vector-indexed successfully!');
+        setIsRunbookModalOpen(false);
+        setRbTitle('');
+        setRbContent('');
+        setRbService('');
+        setRbAuthor('');
+        loadSreData();
+      } else {
+        antdMessage.error(res?.message || 'Failed to save runbook');
+      }
+    } catch (error) {
+      antdMessage.error(`Error saving runbook: ${error}`);
+    }
+  };
+
   return (
     <Layout style={{ height: '100vh', width: '100vw', background: '#0b0f19', color: '#f1f5f9' }}>
       {/* Settings Modal */}
@@ -828,7 +932,7 @@ export default function ChatPanel() {
         title={
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <SettingOutlined style={{ color: '#38bdf8' }} />
-            <span style={{ color: '#f8fafc', fontWeight: 600 }}>AgenticAI Settings & System Manager</span>
+            <span style={{ color: '#f8fafc', fontWeight: 600 }}>CockroachSRE Settings & Operations Manager</span>
           </div>
         }
         open={isSettingsOpen}
@@ -1392,9 +1496,349 @@ export default function ChatPanel() {
                   />
                 </div>
               )
+            },
+            {
+              key: 'sre',
+              label: <span><AlertOutlined /> SRE Console</span>,
+              children: (
+                <div style={{ marginTop: '8px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                    <Typography.Paragraph type="secondary" style={{ margin: 0, fontSize: '13px' }}>
+                      Monitor production incidents, view runbook playbooks, and inspect the resolution fix history stored in CockroachDB. All items are auto-indexed in pgvector.
+                    </Typography.Paragraph>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <Button 
+                        size="small" 
+                        icon={<SyncOutlined />} 
+                        onClick={loadSreData}
+                        loading={isLoadingSre}
+                        style={{ background: 'rgba(255, 255, 255, 0.05)', color: '#f8fafc', borderColor: 'rgba(255, 255, 255, 0.1)' }}
+                      >
+                        Refresh
+                      </Button>
+                      <Button 
+                        type="primary" 
+                        size="small" 
+                        danger
+                        icon={<AlertOutlined />} 
+                        onClick={() => setIsIncidentModalOpen(true)}
+                        style={{ background: '#dc2626', borderColor: '#dc2626' }}
+                      >
+                        Ingest Incident
+                      </Button>
+                      <Button 
+                        type="primary" 
+                        size="small" 
+                        icon={<PlusOutlined />} 
+                        onClick={() => setIsRunbookModalOpen(true)}
+                        style={{ background: '#0284c7', borderColor: '#0284c7' }}
+                      >
+                        Add Runbook
+                      </Button>
+                    </div>
+                  </div>
+
+                  <Collapse 
+                    defaultActiveKey={['incidents', 'runbooks']} 
+                    ghost 
+                    style={{ background: 'transparent' }}
+                  >
+                    <Collapse.Panel 
+                      header={<span style={{ color: '#ef4444', fontWeight: 600 }}>🚨 Active Production Incidents ({sreIncidents.length})</span>} 
+                      key="incidents"
+                    >
+                      <Table
+                        size="small"
+                        dataSource={sreIncidents}
+                        rowKey="id"
+                        pagination={{ pageSize: 5, size: 'small' }}
+                        columns={[
+                          {
+                            title: 'Status',
+                            dataIndex: 'status',
+                            key: 'status',
+                            width: 120,
+                            render: (status) => (
+                              <Tag color={status === 'RESOLVED' ? 'success' : status === 'INVESTIGATING' ? 'warning' : 'error'}>
+                                {status}
+                              </Tag>
+                            )
+                          },
+                          {
+                            title: 'Severity',
+                            dataIndex: 'severity',
+                            key: 'severity',
+                            width: 90,
+                            render: (sev) => <Tag color={sev === 'P1' ? 'red' : sev === 'P2' ? 'orange' : 'blue'}>{sev}</Tag>
+                          },
+                          {
+                            title: 'Service',
+                            dataIndex: 'service_name',
+                            key: 'service_name',
+                            width: 130,
+                            render: (svc) => <Tag color="default">{svc || 'unknown'}</Tag>
+                          },
+                          {
+                            title: 'Title',
+                            dataIndex: 'title',
+                            key: 'title',
+                            render: (text) => <span style={{ fontWeight: 500, color: '#f8fafc' }}>{text}</span>
+                          },
+                          {
+                            title: 'Logged At',
+                            dataIndex: 'created_at',
+                            key: 'created_at',
+                            width: 140,
+                            render: (date) => <span style={{ fontSize: '11px', color: '#64748b' }}>{new Date(date).toLocaleString()}</span>
+                          }
+                        ]}
+                      />
+                    </Collapse.Panel>
+
+                    <Collapse.Panel 
+                      header={<span style={{ color: '#38bdf8', fontWeight: 600 }}>📖 SRE Diagnostic Playbooks & Runbooks ({sreRunbooks.length})</span>} 
+                      key="runbooks"
+                    >
+                      <Table
+                        size="small"
+                        dataSource={sreRunbooks}
+                        rowKey="id"
+                        pagination={{ pageSize: 5, size: 'small' }}
+                        expandable={{
+                          expandedRowRender: record => (
+                            <div style={{ background: '#05070f', padding: '12px', borderRadius: '6px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                              <div style={{ color: '#38bdf8', fontWeight: 600, marginBottom: '6px', fontSize: '12px' }}>Playbook Instructions:</div>
+                              <div style={{ whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: '12px', color: '#cbd5e1' }}>
+                                {record.content}
+                              </div>
+                            </div>
+                          ),
+                          rowExpandable: record => !!record.content,
+                        }}
+                        columns={[
+                          {
+                            title: 'Service',
+                            dataIndex: 'service_name',
+                            key: 'service_name',
+                            width: 130,
+                            render: (svc) => <Tag color="blue">{svc || 'global'}</Tag>
+                          },
+                          {
+                            title: 'Title',
+                            dataIndex: 'title',
+                            key: 'title',
+                            render: (text) => <span style={{ fontWeight: 500, color: '#f8fafc' }}>{text}</span>
+                          },
+                          {
+                            title: 'Author',
+                            dataIndex: 'author',
+                            key: 'author',
+                            width: 120,
+                          },
+                          {
+                            title: 'Saved At',
+                            dataIndex: 'created_at',
+                            key: 'created_at',
+                            width: 140,
+                            render: (date) => <span style={{ fontSize: '11px', color: '#64748b' }}>{new Date(date).toLocaleString()}</span>
+                          }
+                        ]}
+                      />
+                    </Collapse.Panel>
+
+                    <Collapse.Panel 
+                      header={<span style={{ color: '#4ade80', fontWeight: 600 }}>🛠️ Resolution & Fix Actions History ({sreFixHistory.length})</span>} 
+                      key="history"
+                    >
+                      <Table
+                        size="small"
+                        dataSource={sreFixHistory}
+                        rowKey="id"
+                        pagination={{ pageSize: 5, size: 'small' }}
+                        columns={[
+                          {
+                            title: 'Outcome',
+                            dataIndex: 'success',
+                            key: 'success',
+                            width: 100,
+                            render: (success) => (
+                              <Tag color={success ? 'success' : 'error'}>
+                                {success ? 'SUCCESS' : 'FAILED'}
+                              </Tag>
+                            )
+                          },
+                          {
+                            title: 'Action Taken',
+                            dataIndex: 'action_taken',
+                            key: 'action_taken',
+                            render: (text) => <span style={{ color: '#cbd5e1' }}>{text}</span>
+                          },
+                          {
+                            title: 'Engineer Notes',
+                            dataIndex: 'engineer_notes',
+                            key: 'engineer_notes',
+                            render: (text) => <span style={{ fontStyle: 'italic', color: '#94a3b8' }}>{text || '-'}</span>
+                          },
+                          {
+                            title: 'Recorded At',
+                            dataIndex: 'created_at',
+                            key: 'created_at',
+                            width: 140,
+                            render: (date) => <span style={{ fontSize: '11px', color: '#64748b' }}>{new Date(date).toLocaleString()}</span>
+                          }
+                        ]}
+                      />
+                    </Collapse.Panel>
+                  </Collapse>
+                </div>
+              )
             }
           ]}
         />
+      </Modal>
+
+      {/* Ingest Incident Modal */}
+      <Modal
+        title={
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#ef4444' }}>
+            <AlertOutlined />
+            <span>Ingest Production Incident</span>
+          </div>
+        }
+        open={isIncidentModalOpen}
+        onOk={handleIngestIncident}
+        onCancel={() => setIsIncidentModalOpen(false)}
+        okText="Log Incident"
+        width={500}
+        styles={{
+          mask: { backdropFilter: 'blur(4px)', background: 'rgba(0, 0, 0, 0.6)' },
+          body: { background: '#0f172a', color: '#f8fafc', padding: '16px 20px' },
+          header: { background: 'transparent', borderBottom: '1px solid rgba(255, 255, 255, 0.08)' }
+        }}
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '12px' }}>
+          <div>
+            <Typography.Text style={{ color: '#cbd5e1', fontSize: '12px', display: 'block', marginBottom: '4px' }}>Incident Summary / Title *</Typography.Text>
+            <Input 
+              placeholder="e.g. auth-service: HTTP 504 gateway timeout" 
+              value={incTitle} 
+              onChange={e => setIncTitle(e.target.value)} 
+              style={{ background: '#1e293b', color: '#f8fafc', borderColor: '#334155' }}
+            />
+          </div>
+
+          <div>
+            <Typography.Text style={{ color: '#cbd5e1', fontSize: '12px', display: 'block', marginBottom: '4px' }}>Microservice / Component</Typography.Text>
+            <Input 
+              placeholder="e.g. auth-service" 
+              value={incService} 
+              onChange={e => setIncService(e.target.value)} 
+              style={{ background: '#1e293b', color: '#f8fafc', borderColor: '#334155' }}
+            />
+          </div>
+
+          <div style={{ display: 'flex', gap: '12px' }}>
+            <div style={{ flex: 1 }}>
+              <Typography.Text style={{ color: '#cbd5e1', fontSize: '12px', display: 'block', marginBottom: '4px' }}>Severity</Typography.Text>
+              <Select
+                value={incSeverity}
+                onChange={val => setIncSeverity(val)}
+                style={{ width: '100%' }}
+                options={[
+                  { value: 'P1', label: '🔴 P1 (Critical)' },
+                  { value: 'P2', label: '🟠 P2 (Major)' },
+                  { value: 'P3', label: '🟡 P3 (Medium)' },
+                  { value: 'P4', label: '🔵 P4 (Minor)' },
+                ]}
+              />
+            </div>
+          </div>
+
+          <div>
+            <Typography.Text style={{ color: '#cbd5e1', fontSize: '12px', display: 'block', marginBottom: '4px' }}>Symptoms Description</Typography.Text>
+            <Input.TextArea 
+              rows={3}
+              placeholder="Describe symptoms, logs, or error traces..." 
+              value={incDesc} 
+              onChange={e => setIncDesc(e.target.value)} 
+              style={{ background: '#1e293b', color: '#f8fafc', borderColor: '#334155' }}
+            />
+          </div>
+
+          <div>
+            <Typography.Text style={{ color: '#cbd5e1', fontSize: '12px', display: 'block', marginBottom: '4px' }}>Diagnostic Metadata (JSON Logs/Alert payload)</Typography.Text>
+            <Input.TextArea 
+              rows={3}
+              placeholder='e.g. {"thread_count": 150, "heap_used": "89%"}' 
+              value={incMetadata} 
+              onChange={e => setIncMetadata(e.target.value)} 
+              style={{ background: '#1e293b', color: '#f8fafc', borderColor: '#334155', fontFamily: 'monospace' }}
+            />
+          </div>
+        </div>
+      </Modal>
+
+      {/* Save Runbook Modal */}
+      <Modal
+        title={
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#38bdf8' }}>
+            <PlusOutlined />
+            <span>Create SRE Runbook Playbook</span>
+          </div>
+        }
+        open={isRunbookModalOpen}
+        onOk={handleSaveRunbook}
+        onCancel={() => setIsRunbookModalOpen(false)}
+        okText="Save Playbook"
+        width={500}
+        styles={{
+          mask: { backdropFilter: 'blur(4px)', background: 'rgba(0, 0, 0, 0.6)' },
+          body: { background: '#0f172a', color: '#f8fafc', padding: '16px 20px' },
+          header: { background: 'transparent', borderBottom: '1px solid rgba(255, 255, 255, 0.08)' }
+        }}
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '12px' }}>
+          <div>
+            <Typography.Text style={{ color: '#cbd5e1', fontSize: '12px', display: 'block', marginBottom: '4px' }}>Playbook Title *</Typography.Text>
+            <Input 
+              placeholder="e.g. Scaling auth pool timeout leaks" 
+              value={rbTitle} 
+              onChange={e => setRbTitle(e.target.value)} 
+              style={{ background: '#1e293b', color: '#f8fafc', borderColor: '#334155' }}
+            />
+          </div>
+
+          <div>
+            <Typography.Text style={{ color: '#cbd5e1', fontSize: '12px', display: 'block', marginBottom: '4px' }}>Microservice / Component</Typography.Text>
+            <Input 
+              placeholder="e.g. auth-service" 
+              value={rbService} 
+              onChange={e => setRbService(e.target.value)} 
+              style={{ background: '#1e293b', color: '#f8fafc', borderColor: '#334155' }}
+            />
+          </div>
+
+          <div>
+            <Typography.Text style={{ color: '#cbd5e1', fontSize: '12px', display: 'block', marginBottom: '4px' }}>Author Name</Typography.Text>
+            <Input 
+              placeholder="e.g. Ops-Team" 
+              value={rbAuthor} 
+              onChange={e => setRbAuthor(e.target.value)} 
+              style={{ background: '#1e293b', color: '#f8fafc', borderColor: '#334155' }}
+            />
+          </div>
+
+          <div>
+            <Typography.Text style={{ color: '#cbd5e1', fontSize: '12px', display: 'block', marginBottom: '4px' }}>Step-by-Step Remediation Playbook Content *</Typography.Text>
+            <Input.TextArea 
+              rows={6}
+              placeholder="List commands to run, pods to restart, configurations to change, etc..." 
+              value={rbContent} 
+              onChange={e => setRbContent(e.target.value)} 
+              style={{ background: '#1e293b', color: '#f8fafc', borderColor: '#334155' }}
+            />
+          </div>
+        </div>
       </Modal>
 
       {/* Add / Edit MCP Server Modal */}
@@ -1600,7 +2044,7 @@ export default function ChatPanel() {
             }}>
               <RobotOutlined style={{ color: '#ffffff', fontSize: '18px' }} />
             </div>
-            <span>AgenticAI Studio</span>
+            <span>CockroachSRE Studio</span>
             <span style={{ 
               fontSize: '11px', 
               fontWeight: 500, 
@@ -1657,6 +2101,7 @@ export default function ChatPanel() {
                 await loadMemories();
                 await loadRoleModels();
                 await loadApiKeys();
+                await loadSreData();
               }}
             />
           </Tooltip>
@@ -2100,7 +2545,7 @@ export default function ChatPanel() {
                 />
               </Tooltip>
               <Input.TextArea
-                placeholder="Message AgenticAI..."
+                placeholder="Message CockroachSRE..."
                 value={input}
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={(e) => {
@@ -2141,7 +2586,7 @@ export default function ChatPanel() {
               </Button>
             </div>
             <div style={{ textAlign: 'center', marginTop: 8, color: '#64748b', fontSize: '11px' }}>
-              © 2026 AgenticAI • Multi-Model Agent System • {backendRunning ? 'AI Ready' : 'AI Offline'}
+              © 2026 CockroachSRE • Site Reliability Engineering Agent System • {backendRunning ? 'AI Ready' : 'AI Offline'}
             </div>
           </Footer>
         </Layout>
