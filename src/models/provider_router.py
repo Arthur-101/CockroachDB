@@ -9,7 +9,7 @@ import urllib.request
 import urllib.error
 
 from src.models.openrouter_client import OpenRouterClient, Message
-from src.memory.sqlite_store import SQLiteMemoryStore
+from src.memory.cockroach_store import SQLiteMemoryStore
 from src.utils.config import config
 
 logger = logging.getLogger(__name__)

@@ -15,7 +15,7 @@ from pydantic import BaseModel
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.controller.chat_router import ChatRouter
-from src.memory.sqlite_store import SQLiteMemoryStore
+from src.memory.cockroach_store import SQLiteMemoryStore
 from src.tools.terminal_manager import terminal_manager
 
 

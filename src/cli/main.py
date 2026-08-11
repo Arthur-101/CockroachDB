@@ -18,7 +18,7 @@ from rich.text import Text
 
 from src.models.openrouter_client import OpenRouterClient, ModelType, Message
 from src.controller.model_router import ModelRouter, route_and_execute, TaskType
-from src.memory.sqlite_store import SQLiteMemoryStore, SessionManager
+from src.memory.cockroach_store import SQLiteMemoryStore, SessionManager
 from src.utils.config import config
 
 

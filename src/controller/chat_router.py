@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from src.models.openrouter_client import OpenRouterClient, Message, ModelType
-from src.memory.sqlite_store import SQLiteMemoryStore, SessionManager
+from src.memory.cockroach_store import SQLiteMemoryStore, SessionManager
 from src.memory.vector_store import VectorMemoryStore
 from src.memory.redis_store import redis_store
 from src.utils.config import config
