@@ -3,6 +3,7 @@ import json
 import logging
 import asyncio
 import datetime
+import sys
 from typing import Dict, Any, List, Optional
 import urllib.request
 import urllib.error
@@ -578,7 +579,9 @@ class ProviderRouter:
         max_tokens: int = 2000,
         tools: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
-        """Route generation request to appropriate provider with tool calling support."""
+        """Route generation request to appropriate provider with tool calling support.
+        Supports 5x rate-limiting retry loop and strictly avoids silent fallback to OpenRouter.
+        """
         raw_model = model_id.strip()
         provider_name = "openrouter"
         clean_model = raw_model
@@ -612,41 +615,80 @@ class ProviderRouter:
             clean_model = raw_model.replace("openrouter/", "")
 
         provider_name = provider_name.lower().strip()
+        max_attempts = 5
 
-        current_time = datetime.datetime.now().strftime("%H:%M:%S")
-        print(f"[{current_time}] 🤖 Requesting completion from direct provider [{provider_name.upper()}]: {clean_model}...")
+        # Inner helper to execute a single generation attempt depending on resolved provider
+        async def _execute_single_attempt() -> Dict[str, Any]:
+            if provider_name in ["google", "gemini"]:
+                api_key = self.get_api_key_for_provider("google")
+                if not api_key:
+                    return {
+                        "success": False,
+                        "error": "No Google AI Studio API Key found. Please add your Google AI Studio API key in Settings -> Models & API Keys.",
+                        "content": "⚠️ No Google AI Studio API Key found. Please add your Google AI Studio API key in Settings -> Models & API Keys (or set GEMINI_API_KEY in .env) to use Google AI Studio.",
+                        "model_id": f"google/{clean_model}"
+                    }
+                return await self._generate_google_direct(messages, clean_model, api_key, temperature, max_tokens, tools)
 
-        # Helper to fall back to OpenRouter pass-through for the requested model if direct provider fails or lacks key
-        async def _fallback_to_openrouter(target_model_name: str) -> Optional[Dict[str, Any]]:
-            openrouter_key = self.get_api_key_for_provider("openrouter")
-            if not openrouter_key:
-                return None
-            
-            fmt_model = target_model_name
-            t_lower = target_model_name.lower()
-            if "gemini" in t_lower and not t_lower.startswith("google/"):
-                fmt_model = f"google/{target_model_name}"
-            elif "claude" in t_lower and not t_lower.startswith("anthropic/"):
-                fmt_model = f"anthropic/{target_model_name}"
-            elif ("mistral" in t_lower or "codestral" in t_lower or "pixtral" in t_lower) and not t_lower.startswith("mistralai/"):
-                fmt_model = f"mistralai/{target_model_name}"
-            elif "deepseek" in t_lower and not t_lower.startswith("deepseek/"):
-                fmt_model = f"deepseek/{target_model_name}"
-            elif "qwen" in t_lower and not t_lower.startswith("qwen/"):
-                fmt_model = f"qwen/{target_model_name}"
+            elif provider_name in ["openai"]:
+                api_key = self.get_api_key_for_provider("openai")
+                if not api_key:
+                    return {
+                        "success": False,
+                        "error": "No OpenAI API Key found. Please add your OpenAI API key in Settings -> Models & API Keys.",
+                        "content": "⚠️ No OpenAI API Key found. Please add your OpenAI API key in Settings -> Models & API Keys (or set OPENAI_API_KEY in .env) to use OpenAI.",
+                        "model_id": f"openai/{clean_model}"
+                    }
+                return await self._generate_openai_direct(messages, clean_model, api_key, temperature, max_tokens, tools)
 
-            openrouter_aliases = {
-                "google/gemini-2.0-flash": "google/gemini-2.5-flash",
-                "google/gemini-2.0-flash-lite": "google/gemini-2.5-flash-lite",
-                "google/gemini-3.5-flash": "google/gemini-2.5-flash",
-                "google/gemini-3.6-flash": "google/gemini-2.5-flash",
-                "google/gemini-3.1-pro": "google/gemini-2.5-pro",
-                "google/gemini-3-flash": "google/gemini-2.5-flash",
-            }
-            fmt_model = openrouter_aliases.get(fmt_model, fmt_model)
+            elif provider_name in ["anthropic", "claude"]:
+                api_key = self.get_api_key_for_provider("anthropic")
+                if not api_key:
+                    return {
+                        "success": False,
+                        "error": "No Anthropic API Key found. Please add your Anthropic API key in Settings -> Models & API Keys.",
+                        "content": "⚠️ No Anthropic API Key found. Please add your Anthropic API key in Settings -> Models & API Keys (or set ANTHROPIC_API_KEY in .env) to use Anthropic.",
+                        "model_id": f"anthropic/{clean_model}"
+                    }
+                return await self._generate_anthropic_direct(messages, clean_model, api_key, temperature, max_tokens, tools)
 
-            print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] 🔄 Direct provider unavailable/failed. Falling back to OpenRouter pass-through for model [{fmt_model}]...")
-            try:
+            elif provider_name in ["groq"]:
+                api_key = self.get_api_key_for_provider("groq")
+                if not api_key:
+                    return {
+                        "success": False,
+                        "error": "No Groq API Key found. Please add your Groq API key in Settings -> Models & API Keys.",
+                        "content": "⚠️ No Groq API Key found. Please add your Groq API key in Settings -> Models & API Keys (or set GROQ_API_KEY in .env) to use Groq.",
+                        "model_id": f"groq/{clean_model}"
+                    }
+                return await self._generate_groq_direct(messages, clean_model, api_key, temperature, max_tokens, tools)
+
+            elif provider_name in ["mistral", "mistralai", "codestral"]:
+                api_key = self.get_api_key_for_provider("mistral")
+                if not api_key:
+                    return {
+                        "success": False,
+                        "error": "No Mistral API Key found. Please add your Mistral API key in Settings -> Models & API Keys.",
+                        "content": "⚠️ No Mistral API Key found. Please add your Mistral API key in Settings -> Models & API Keys (or set MISTRAL_API_KEY in .env) to use Mistral AI.",
+                        "model_id": f"mistral/{clean_model}"
+                    }
+                return await self._generate_mistral_direct(messages, clean_model, api_key, temperature, max_tokens, tools)
+
+            else:
+                # OpenRouter API
+                formatted_model = clean_model
+                model_lower = clean_model.lower()
+                if "gemini" in model_lower and not model_lower.startswith("google/"):
+                    formatted_model = f"google/{clean_model}"
+                elif "deepseek" in model_lower and not model_lower.startswith("deepseek/"):
+                    formatted_model = f"deepseek/{clean_model}"
+                elif "qwen" in model_lower and not model_lower.startswith("qwen/"):
+                    formatted_model = f"qwen/{clean_model}"
+                elif "claude" in model_lower and not model_lower.startswith("anthropic/"):
+                    formatted_model = f"anthropic/{clean_model}"
+                elif ("mistral" in model_lower or "codestral" in model_lower or "pixtral" in model_lower) and not model_lower.startswith("mistralai/"):
+                    formatted_model = f"mistralai/{clean_model}"
+
                 from src.models.openrouter_client import Message
                 msg_objs = []
                 for m in messages:
@@ -655,167 +697,45 @@ class ProviderRouter:
                     elif isinstance(m, Message):
                         msg_objs.append(m)
 
-                resp = await self.openrouter_client.chat_completion(
-                    messages=msg_objs,
-                    model_type=fmt_model,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                    tools=tools
-                )
-                c_text = ""
-                t_calls = None
-                if resp.choices:
-                    c_msg = resp.choices[0].get("message", {})
-                    c_text = c_msg.get("content", "")
-                    t_calls = c_msg.get("tool_calls", None)
-                toks = resp.usage.total_tokens if resp.usage else 0
-                return {"content": c_text, "tool_calls": t_calls, "model_id": f"openrouter:{fmt_model}", "tokens_used": toks, "success": True}
-            except Exception as fe:
-                logger.warning(f"OpenRouter pass-through fallback failed for {fmt_model}: {fe}")
-                return None
+                try:
+                    resp = await self.openrouter_client.chat_completion(
+                        messages=msg_objs,
+                        model_type=formatted_model,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                        tools=tools
+                    )
+                    content = ""
+                    tool_calls = None
+                    if resp.choices:
+                        choice_msg = resp.choices[0].get("message", {})
+                        content = choice_msg.get("content", "")
+                        tool_calls = choice_msg.get("tool_calls", None)
+                    tokens = resp.usage.total_tokens if resp.usage else 0
+                    return {"content": content, "tool_calls": tool_calls, "model_id": formatted_model, "tokens_used": tokens, "success": True}
+                except Exception as e:
+                    return {"success": False, "error": str(e), "model_id": formatted_model}
 
-        # 1. Google AI Studio Direct API
-        if provider_name in ["google", "gemini"]:
-            api_key = self.get_api_key_for_provider("google")
-            if api_key:
-                res = await self._generate_google_direct(messages, clean_model, api_key, temperature, max_tokens, tools)
-                if res.get("success", False):
-                    print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] ✅ Response received from [GOOGLE] {clean_model} (Tokens: {res.get('tokens_used', 0)})")
-                    return res
-                else:
-                    logger.warning(f"Google direct API call returned error: {res.get('error')}. Attempting OpenRouter pass-through...")
-            
-            fb_res = await _fallback_to_openrouter(clean_model)
-            if fb_res:
-                return fb_res
-            return {
-                "success": False,
-                "error": "No Google AI Studio API Key found. Please add your Google AI Studio API key in Settings -> Models & API Keys.",
-                "content": "⚠️ No Google AI Studio API Key found. Please add your Google AI Studio API key in Settings -> Models & API Keys (or set GEMINI_API_KEY in .env) to use Google AI Studio.",
-                "model_id": f"google/{clean_model}"
-            }
+        # ── Attempt dispatching loop with 10-second retry delay for rate limits ──
+        for attempt in range(1, max_attempts + 1):
+            res = await _execute_single_attempt()
+            if res.get("success", False):
+                print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] ✅ Response received from [{provider_name.upper()}] {clean_model} (Tokens: {res.get('tokens_used', 0)})")
+                return res
 
-        # 2. OpenAI Native Direct API
-        if provider_name in ["openai"]:
-            api_key = self.get_api_key_for_provider("openai")
-            if api_key:
-                res = await self._generate_openai_direct(messages, clean_model, api_key, temperature, max_tokens, tools)
-                if res.get("success", False):
-                    print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] ✅ Response received from [OPENAI] {clean_model} (Tokens: {res.get('tokens_used', 0)})")
-                    return res
-                else:
-                    logger.warning(f"OpenAI direct API call returned error: {res.get('error')}. Attempting OpenRouter pass-through...")
-            
-            fb_res = await _fallback_to_openrouter(clean_model)
-            if fb_res:
-                return fb_res
-            return {
-                "success": False,
-                "error": "No OpenAI API Key found. Please add your OpenAI API key in Settings -> Models & API Keys.",
-                "content": "⚠️ No OpenAI API Key found. Please add your OpenAI API key in Settings -> Models & API Keys (or set OPENAI_API_KEY in .env) to use OpenAI.",
-                "model_id": f"openai/{clean_model}"
-            }
+            err_msg = str(res.get("error", "")).lower()
+            if "no " in err_msg and "key found" in err_msg:
+                # Key is missing — return failure directly, don't waste time retrying
+                return res
 
-        # 3. Anthropic Direct API
-        if provider_name in ["anthropic", "claude"]:
-            api_key = self.get_api_key_for_provider("anthropic")
-            if api_key:
-                res = await self._generate_anthropic_direct(messages, clean_model, api_key, temperature, max_tokens, tools)
-                if res.get("success", False):
-                    print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] ✅ Response received from [ANTHROPIC] {clean_model} (Tokens: {res.get('tokens_used', 0)})")
-                    return res
-                else:
-                    logger.warning(f"Anthropic direct API call returned error: {res.get('error')}. Attempting OpenRouter pass-through...")
-            
-            fb_res = await _fallback_to_openrouter(clean_model)
-            if fb_res:
-                return fb_res
-            return {
-                "success": False,
-                "error": "No Anthropic API Key found. Please add your Anthropic API key in Settings -> Models & API Keys.",
-                "content": "⚠️ No Anthropic API Key found. Please add your Anthropic API key in Settings -> Models & API Keys (or set ANTHROPIC_API_KEY in .env) to use Anthropic.",
-                "model_id": f"anthropic/{clean_model}"
-            }
+            is_rate_limit = any(k in err_msg for k in ["429", "rate limit", "rate_limit", "quota", "exhausted", "resource_exhaustion"])
+            if is_rate_limit and attempt < max_attempts:
+                print(f"⚠️ [{provider_name.upper()}] [429 Rate Limit/Quota Exceeded] hit. Retrying in 10 seconds (Attempt {attempt}/{max_attempts})...", file=sys.stderr, flush=True)
+                await asyncio.sleep(10)
+            else:
+                # Non-rate-limit error or final attempt failed — return error directly (no fallback)
+                return res
 
-        # 4. Groq Direct API
-        if provider_name in ["groq"]:
-            api_key = self.get_api_key_for_provider("groq")
-            if api_key:
-                res = await self._generate_groq_direct(messages, clean_model, api_key, temperature, max_tokens, tools)
-                if res.get("success", False):
-                    print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] ✅ Response received from [GROQ] {clean_model} (Tokens: {res.get('tokens_used', 0)})")
-                    return res
-                else:
-                    logger.warning(f"Groq direct API call returned error: {res.get('error')}. Attempting OpenRouter pass-through...")
-            
-            fb_res = await _fallback_to_openrouter(clean_model)
-            if fb_res:
-                return fb_res
-            return {
-                "success": False,
-                "error": "No Groq API Key found. Please add your Groq API key in Settings -> Models & API Keys.",
-                "content": "⚠️ No Groq API Key found. Please add your Groq API key in Settings -> Models & API Keys (or set GROQ_API_KEY in .env) to use Groq.",
-                "model_id": f"groq/{clean_model}"
-            }
-
-        # 5. Mistral Direct API
-        if provider_name in ["mistral", "mistralai", "codestral"]:
-            api_key = self.get_api_key_for_provider("mistral")
-            if api_key:
-                res = await self._generate_mistral_direct(messages, clean_model, api_key, temperature, max_tokens, tools)
-                if res.get("success", False):
-                    print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] ✅ Response received from [MISTRAL] {clean_model} (Tokens: {res.get('tokens_used', 0)})")
-                    return res
-                else:
-                    logger.warning(f"Mistral direct API call returned error: {res.get('error')}. Attempting OpenRouter pass-through...")
-            
-            fb_res = await _fallback_to_openrouter(clean_model)
-            if fb_res:
-                return fb_res
-            return {
-                "success": False,
-                "error": "No Mistral API Key found. Please add your Mistral API key in Settings -> Models & API Keys.",
-                "content": "⚠️ No Mistral API Key found. Please add your Mistral API key in Settings -> Models & API Keys (or set MISTRAL_API_KEY in .env) to use Mistral AI.",
-                "model_id": f"mistral/{clean_model}"
-            }
-
-        # 6. OpenRouter API
-        formatted_model = clean_model
-        model_lower = clean_model.lower()
-        if "gemini" in model_lower and not model_lower.startswith("google/"):
-            formatted_model = f"google/{clean_model}"
-        elif "deepseek" in model_lower and not model_lower.startswith("deepseek/"):
-            formatted_model = f"deepseek/{clean_model}"
-        elif "qwen" in model_lower and not model_lower.startswith("qwen/"):
-            formatted_model = f"qwen/{clean_model}"
-        elif "claude" in model_lower and not model_lower.startswith("anthropic/"):
-            formatted_model = f"anthropic/{clean_model}"
-        elif ("mistral" in model_lower or "codestral" in model_lower or "pixtral" in model_lower) and not model_lower.startswith("mistralai/"):
-            formatted_model = f"mistralai/{clean_model}"
-
-        from src.models.openrouter_client import Message
-        msg_objs = []
-        for m in messages:
-            if isinstance(m, dict):
-                msg_objs.append(Message(role=m.get("role", "user"), content=m.get("content", ""), tool_calls=m.get("tool_calls"), tool_call_id=m.get("tool_call_id")))
-            elif isinstance(m, Message):
-                msg_objs.append(m)
-
-        resp = await self.openrouter_client.chat_completion(
-            messages=msg_objs,
-            model_type=formatted_model,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            tools=tools
-        )
-        content = ""
-        tool_calls = None
-        if resp.choices:
-            choice_msg = resp.choices[0].get("message", {})
-            content = choice_msg.get("content", "")
-            tool_calls = choice_msg.get("tool_calls", None)
-        tokens = resp.usage.total_tokens if resp.usage else 0
-        return {"content": content, "tool_calls": tool_calls, "model_id": formatted_model, "tokens_used": tokens, "success": True}
 
     # ── Private Provider Direct HTTP Implementations ─────────────────────────────
 

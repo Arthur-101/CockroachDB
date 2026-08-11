@@ -287,17 +287,10 @@ data/
   - Pre-installed and integrated the Tavily search client server as a local MCP server, providing robust fallback web search capability.
 - **Professional Project Documentation Rewrite**:
   - Rewrote the main project `README.md` to professionally highlight the core features, modular system architecture (heterogeneous routing, sub-agent consensus aggregation, local MCP server hosting), zero-dependency portable Redis memory configuration, installation prerequisites, and setup instructions.
-
-
-
-
-
-
-
-
-
-
-
+- **Antigravity Skills Vault & Global Skills Integration**:
+  - Cloned the open-source [`rmyndharis/antigravity-skills`](https://github.com/rmyndharis/antigravity-skills) repository to `E:\Codes\AgenticAI\antigravity-skills-temp`.
+  - Installed a curated collection of 11 developer skills (`python-pro`, `fastapi-pro`, `async-python-patterns`, `uv-package-manager`, `ai-engineer`, `rag-implementation`, `vector-database-engineer`, `embedding-strategies`, `react-state-management`, `frontend-developer`, and the global `antigravity-skills-manager`) directly into the global customizations directory (`C:\Users\SAURAV\.gemini\config\skills/`).
+  - These skills are now available globally and automatically loaded on-demand by Antigravity using progressive disclosure to optimize token usage.
 
 ## Planned Future Roadmap Tasks (Notion Tracked)
 - **Task 1: Live Token Usage & Budget Warning Tracker Widget**: Add live token/cost meter in top header bar showing expenditure ($) per session/model with dynamic OpenRouter pricing catalog sync, multi-tier protection (75% Soft Alert, 90% Auto-Downgrade, 100% Hard Cap), sub-agent cost attribution tagging, atomic Redis sync, and an analytics drawer with spending graphs.
