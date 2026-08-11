@@ -76,17 +76,7 @@ def init_db():
             source VARCHAR(500),
             embedding_id VARCHAR(255),
             metadata TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-        """)
-
-        # Embeddings Table (pgvector)
-        # Using 1536 dimensions (matching OpenAI text-embedding-3-small / text-embedding-ada-002)
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS embeddings (
-            id VARCHAR(255) PRIMARY KEY,
-            embedding VECTOR(1536) NOT NULL,
-            document_id VARCHAR(255) REFERENCES documents(id) ON DELETE CASCADE,
+            embedding VECTOR(384),
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
         """)
@@ -109,13 +99,14 @@ def init_db():
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS messages (
             id VARCHAR(255) PRIMARY KEY,
-            session_id VARCHAR(255) REFERENCES conversations(id) ON DELETE CASCADE,
+            session_id VARCHAR(255), -- Foreign key dropped dynamically on migration
             role VARCHAR(50) NOT NULL,
             content_raw TEXT NOT NULL,
             content_summary TEXT,
             tags_json TEXT,
             model_id VARCHAR(255),
             tokens_used INT DEFAULT 0,
+            embedding VECTOR(384),
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
         """)
@@ -126,6 +117,7 @@ def init_db():
             id VARCHAR(255) PRIMARY KEY,
             content TEXT NOT NULL,
             tags_json TEXT,
+            embedding VECTOR(384),
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
         """)
