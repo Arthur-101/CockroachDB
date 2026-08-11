@@ -7,6 +7,7 @@ import threading
 import shutil
 import platform
 import atexit
+import asyncio
 from pathlib import Path
 from collections import deque
 from typing import Dict, Any, List, Optional
@@ -19,7 +20,9 @@ class McpClient:
     def __init__(self, name: str, command: str, args: List[str], env: Optional[Dict[str, str]] = None):
         self.name = name
         self.command = command
-        self.args = args
+        # Resolve dynamic PROJECT_ROOT in arguments for portability
+        project_root = os.getcwd().replace("\\", "/")
+        self.args = [a.replace("{PROJECT_ROOT}", project_root).replace("{project_root}", project_root) if isinstance(a, str) else a for a in args]
         self.env = env or {}
         self.process = None
         self.tools = []
@@ -269,6 +272,138 @@ class McpClient:
         self.tools = []
 
 
+class HttpMcpClient:
+    """Manages a connection to a remote HTTP/SSE-based MCP server using the official mcp SDK."""
+    def __init__(self, name: str, url: str, headers: Optional[Dict[str, str]] = None, env: Optional[Dict[str, str]] = None):
+        self.name = name
+        self.url = url
+        self.headers = headers or {}
+        self.env = env or {}
+        self.tools = []
+        self.status = "Stopped"  # Stopped, Active, Error, Connected
+        self.error_message = ""
+        # Log buffers for advanced UI display (keeps last 200 logs)
+        self.logs = deque(maxlen=200)
+        self._loop = None
+        self._thread = None
+        self._session = None
+        self._running = False
+
+    def log(self, message: str):
+        import datetime
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.logs.append(f"[{timestamp}] {message}")
+
+    def start(self) -> bool:
+        if self._running:
+            return True
+        self.log(f"Connecting to remote SSE MCP server '{self.name}' at {self.url}...")
+        self._running = True
+        self.status = "Stopped"
+        
+        self._loop = asyncio.new_event_loop()
+        self._thread = threading.Thread(target=self._run_loop, daemon=True, name=f"mcp-sse-{self.name}")
+        self._thread.start()
+        
+        # Block synchronous start until handshake completes or fails
+        import time
+        start_time = time.time()
+        while self.status == "Stopped" and (time.time() - start_time) < 20.0:
+            time.sleep(0.1)
+            
+        if self.status != "Active":
+            self.stop()
+            return False
+        return True
+
+    def _run_loop(self):
+        asyncio.set_event_loop(self._loop)
+        try:
+            self._loop.run_until_complete(self._connect_and_run())
+        except Exception as e:
+            self.log(f"Connection loop error: {e}")
+            if self.status == "Stopped":
+                self.status = "Error"
+                self.error_message = str(e)
+        finally:
+            self._running = False
+
+    async def _connect_and_run(self):
+        from mcp.client.sse import sse_client
+        from mcp import ClientSession
+        
+        # Build headers from both headers & env dicts
+        headers = self.headers.copy()
+        for k, v in self.env.items():
+            headers[k] = str(v)
+            
+        if "mcp-cluster-id" not in headers:
+            import os
+            headers["mcp-cluster-id"] = os.environ.get("COCKROACH_MCP_CLUSTER_ID", "")
+            
+        self.log(f"Opening SSE client connection...")
+        async with sse_client(self.url, headers=headers) as (read_stream, write_stream):
+            async with ClientSession(read_stream, write_stream) as session:
+                await session.initialize()
+                self._session = session
+                
+                mcp_tools = await session.list_tools()
+                tools_list = []
+                for t in mcp_tools.tools:
+                    t_dict = t.model_dump() if hasattr(t, "model_dump") else t.dict()
+                    if "input_schema" in t_dict:
+                        t_dict["inputSchema"] = t_dict.pop("input_schema")
+                    tools_list.append(t_dict)
+                    
+                self.tools = tools_list
+                self.status = "Active"
+                self.error_message = ""
+                self.log(f"Connected to remote MCP server. Exposing {len(self.tools)} tools.")
+                
+                # Keep loop alive until self._running is set to False
+                while self._running:
+                    await asyncio.sleep(0.5)
+
+    def call_tool(self, name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        if not self._running or not self._session:
+            return {"success": False, "message": f"SSE MCP client '{self.name}' is inactive."}
+            
+        self.log(f"Invoking remote tool '{name}' with arguments: {arguments}")
+        future = asyncio.run_coroutine_threadsafe(
+            self._session.call_tool(name, arguments),
+            self._loop
+        )
+        try:
+            result = future.result(timeout=35.0)
+            res_dict = result.model_dump() if hasattr(result, "model_dump") else result.dict()
+            self.log(f"Remote tool '{name}' execution succeeded.")
+            return res_dict
+        except Exception as e:
+            self.log(f"Error calling remote tool: {e}")
+            return {"success": False, "message": str(e)}
+
+    def stop(self):
+        self._running = False
+        self.status = "Stopped"
+        self.tools = []
+        self._session = None
+        if self._loop:
+            try:
+                for task in asyncio.all_tasks(self._loop):
+                    task.cancel()
+                self._loop.call_soon_threadsafe(self._loop.stop)
+            except Exception:
+                pass
+            if self._thread and self._thread.is_alive():
+                self._thread.join(timeout=2.0)
+            try:
+                self._loop.close()
+            except Exception:
+                pass
+            self._loop = None
+            self._thread = None
+
+
 class McpManager:
     """Singleton manager that maintains server configurations and active subprocesses."""
 
@@ -308,12 +443,23 @@ class McpManager:
         servers = data.get("mcpServers", {})
         for name, cfg in servers.items():
             if cfg.get("enabled", True):
-                client = McpClient(
-                    name=name,
-                    command=cfg.get("command", ""),
-                    args=cfg.get("args", []),
-                    env=cfg.get("env", {})
-                )
+                cmd = cfg.get("command", "").strip().lower()
+                if cmd in ["sse", "http"]:
+                    args = cfg.get("args", [])
+                    url = args[0] if args else ""
+                    client = HttpMcpClient(
+                        name=name,
+                        url=url,
+                        headers=cfg.get("headers", {}),
+                        env=cfg.get("env", {})
+                    )
+                else:
+                    client = McpClient(
+                        name=name,
+                        command=cfg.get("command", ""),
+                        args=cfg.get("args", []),
+                        env=cfg.get("env", {})
+                    )
                 self.clients[name] = client
                 # Spawn in background thread to avoid blocking main program startup
                 threading.Thread(target=client.start, daemon=True).start()
@@ -334,10 +480,12 @@ class McpManager:
             err_msg = client.error_message if client else ""
             tools = client.tools if client else []
             
+            # For remote SSE servers, client.args will be [url] or client.url
+            resolved_args = client.args if (client and hasattr(client, "args")) else ( [client.url] if (client and hasattr(client, "url")) else cfg.get("args", []) )
             result.append({
                 "name": name,
                 "command": cfg.get("command", ""),
-                "args": cfg.get("args", []),
+                "args": resolved_args,
                 "env": cfg.get("env", {}),
                 "enabled": cfg.get("enabled", True),
                 "status": status,
@@ -377,7 +525,12 @@ class McpManager:
             self.clients[name].stop()
             
         if enabled:
-            client = McpClient(name, command, args, env)
+            cmd = command.strip().lower()
+            if cmd in ["sse", "http"]:
+                url = args[0] if args else ""
+                client = HttpMcpClient(name, url, env=env)
+            else:
+                client = McpClient(name, command, args, env)
             self.clients[name] = client
             threading.Thread(target=client.start, daemon=True).start()
         else:
