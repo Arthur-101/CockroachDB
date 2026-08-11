@@ -1,50 +1,48 @@
-# CockroachAI
+# CockroachSRE — AI SRE Agent System (AWS Bedrock + CockroachDB Architecture)
 
-`This is another version of AgenticAI with the tech stack changes to match with the CockroachDB Hackathon`
+CockroachSRE is an intelligent, multi-model AI-powered SRE (Site Reliability Engineering) agent system developed for the CockroachDB × AWS Hackathon. It is designed to run continuously in the background, monitoring active microservices, parsing application logs, querying database performance metrics, suggesting runbook actions, and executing terminal diagnostic playbooks.
 
-AgenticAI is a multi-model AI agent system built on a modular Model Context Protocol (MCP) style architecture. Rather than relying on a single large language model for all tasks, AgenticAI dynamically orchestrates, selects, and routes tasks to specialized models optimized for speed, cost, reasoning, or multimodal capabilities.
-
-Featuring a modern React and Ant Design dark glassmorphic UI wrapped in a native Windows Tauri system tray application, the system incorporates real-time multi-process synchronization, a robust shared memory layer, local MCP tool hosts, and multi-agent consensus pipelines.
+The system utilizes **CockroachDB Cloud Serverless** as a consolidated relational memory layer and semantic vector store (via `pgvector`), and leverages **AWS Bedrock (Claude 3.5 Sonnet v2)** for orchestrating complex sub-agent execution pipelines and tool calling. The application completely bypasses OpenRouter in favor of direct REST and SDK provider integrations.
 
 ---
 
 ## Technology Stack
 
-The application is built using the following technologies:
+The application is structured into a modular agent-host architecture:
 
 ### Backend
-- **Core Language**: Python 3.9+
-- **API Server**: FastAPI (streaming JSON-RPC over WebSockets/HTTP)
-- **Primary Database (Relational)**: SQLite3 (for session history, configurations, API keys, and memory)
-- **Vector Database (Semantic Search)**: ChromaDB (for document RAG and long-term memory embeddings)
-- **Distributed Cache & Memory Sync**: Redis (portable Redis v5.0 automatically launched by the Python backend)
-- **Direct REST/HTTP Handlers**: Custom provider router supporting OpenRouter, Google AI Studio, Anthropic, OpenAI, Groq, and Mistral AI API endpoints
-- **Terminal Execution**: pywinpty for stateful native Windows PTY access with PSReadLine ANSI escape filtering
+- **Core Engine**: Python 3.9+ (asyncio patterns)
+- **API Server**: FastAPI (JSON-RPC over WebSockets/HTTP)
+- **Consolidated Relational Memory**: CockroachDB Cloud Serverless (chat history, memories, role assignments, incidents, playbooks, API keys, and tool calls)
+- **Semantic Vector Storage**: Inline `pgvector` columns directly inside CockroachDB tables, queried with native cosine distance operators (`<=>`)
+- **Local Embedding Generation**: `SentenceTransformer('all-MiniLM-L6-v2')` executing 384-dimensional cosine matches locally (100% free, zero quota usage)
+- **AWS Bedrock Integration**: `boto3` Converse API client for direct, low-latency AWS Bedrock dispatching
+- **Distributed Cache & Sync**: Redis (portable Redis v5.0 binary auto-started and terminated cleanly by the backend host)
+- **Direct Provider Routers**: Direct API connections for Google AI Studio, OpenAI, Anthropic, Groq, and Mistral AI API endpoints
+- **Terminal Execution**: `pywinpty` for stateful native Windows PTY access with PSReadLine ANSI escape filtering
 
 ### Frontend
-- **Desktop Application Shell**: Tauri (Rust backend wrapper for system tray and window state IPC management)
-- **Web UI Library**: React (TypeScript)
-- **UI Component Framework**: Ant Design (with custom dark-glassmorphism theme configurations)
+- **Desktop Application Shell**: Tauri (Rust backend wrapping system tray controls and IPC windows)
+- **Web Interface**: React (TypeScript)
+- **Theme and Components**: Ant Design (configured with customized dark-glassmorphism styles)
 
 ---
 
 ## Core Features
 
-- **Intelligent Heterogeneous Routing**: Automatically determines task complexity and routes sub-tasks to specialized models or lets users dynamically configure distinct models for specific workflow roles.
-- **Tauri Desktop UI and Windows Tray Integration**: React-based front-end with an advanced glassmorphism theme that minimizes to the Windows System Tray, featuring left-click toggle visibility and native context menu commands.
-- **Zero-Install Portable Redis Memory Sync**: Automatically spawns and manages a bundled portable Redis server on start for multi-process distributed locks, active session caching, and Pub/Sub communication with automatic SQLite fallbacks.
-- **Smart Facts Curation and Consolidation**: Uses conversational history to automatically extract enduring facts, user preferences, and system specs. Synthesizes updates using a deterministic UPDATE, ADD, or SKIP evaluation loop, persisting memory in SQLite and indexing it in ChromaDB for high-accuracy RAG.
-- **Multi-Model Team Collaboration and Consensus Aggregator**: Parallelized team reasoning using SubAgentManager (spawning specialized experts in coding, planning, and vision) combined with a ConsensusAggregator to resolve contradictions and output a unified master response.
-- **Local MCP Client Host**: Thread-safe host architecture that loads data/mcp_config.json, manages stdio-based MCP servers (e.g., Tavily, Spotify) as background subprocesses, exposes them dynamically, and streams logs to the UI settings drawer.
-- **Multi-Format Attachment Processor and Image Lightbox**: Attachment manager that processes PDFs, Code, Log files, and Images (rendering them as base64 in the UI and routing them natively via provider-level vision APIs like Gemini and OpenAI).
-- **Stateful Terminal Manager**: Real Windows native PTY control using pywinpty with prompt-cleaning ANSI filter.
-- **Direct Provider REST APIs**: Leverages native, zero-quota REST dispatchers for direct API calls, with automatic failover fallback to OpenRouter.
+- **Consolidated CockroachDB memory & pgvector Store**: Purged local SQLite and ChromaDB instances. Replaced with CockroachDB Cloud Serverless wire-compatible PostgreSQL connections. Added inline `embedding VECTOR(384)` columns to join messages and memories tables directly, conducting semantic vector lookups with native joins.
+- **Direct AWS Bedrock Integration**: Wire-level boto3 Converse API client for direct Claude 3.5 Sonnet, Claude 3.5 Haiku, and Claude 3 Opus integration. Appends system instructions and structures messages directly to guarantee high fidelity.
+- **Tauri System Tray Tray & Background Service**: Minimizes gracefully to the Windows System Tray on close. Features custom context menus (`🟢 AgenticAI (Engine Active)`, `🖥️ Show Studio Window`, `➕ Start New Chat`, `⚡ Toggle AI Engine`, `❌ Quit AgenticAI`) and left-click toggles.
+- **Zero-Install Portable Redis memory**: Spawns and manages a bundled portable Redis server on start. Implements distributed locks, assembled context caching, and Pub/Sub broadcasts with SQLite/CockroachDB fallbacks.
+- **Smart Memory Curation & Auto-Consolidation**: Extracts enduring facts, user preferences, and system specs from conversation context. Curates fact bases dynamically via `UPDATE`, `ADD`, or `SKIP` evaluations.
+- **Multi-Model Team Consensus**: Spawns parallel background workers (Coding, Reasoning, Multimodal) using `asyncio.gather()` and merges results using a `ConsensusAggregator` to resolve conflicting solutions.
+- **Local MCP Client Host**: Boots stdio-based Model Context Protocol (MCP) servers (e.g., Tavily, Spotify) as background subprocesses, conducts protocol handshakes, and exposes tools dynamically.
+- **Multi-Format Attachment Processor**: Decodes PDFs, log sheets, source code files, and images. Compiles image base64 `data_url` targets and passes them directly to vision APIs (Gemini, GPT).
+- **Stateful PTY Terminal**: Implements stateful command-line interaction on Windows using `pywinpty` with PSReadLine ANSI escape splits to prevent typos and terminal overlaps.
 
 ---
 
 ## System Architecture
-
-### Pipeline Flow
 
 ```
                      ┌──────────────────┐
@@ -53,7 +51,7 @@ The application is built using the following technologies:
                               │
                               ▼
                      ┌──────────────────┐
-                     │   Orchestrator   │
+                     │   Orchestrator   │ (AWS Bedrock / Gemini 2.0)
                      └────────┬─────────┘
                               │ (Decomposes & Selects)
                               ▼
@@ -61,15 +59,15 @@ The application is built using the following technologies:
              │                │                │
              ▼                ▼                ▼
       ┌────────────┐   ┌────────────┐   ┌────────────┐
-      │ Sub-Agent  │   │ Sub-Agent  │   │ Local MCP  │
-      │  (Coding)  │   │(Reasoning) │   │   Tools    │
+      │ Sub-Agent  │   │ Sub-Agent  │   │ Cockroach  │
+      │  (Coding)  │   │(Reasoning) │   │ MCP Server │
       └──────┬─────┘   └─────┬──────┘   └─────┬──────┘
              │                │                │
              └────────────────┼────────────────┘
                               │ (Submits Proposals)
                               ▼
                      ┌──────────────────┐
-                     │    Synthesizer   │
+                     │    Synthesizer   │ (Consensus Aggregator)
                      └────────┬─────────┘
                               │ (Consensus Analysis)
                               ▼
@@ -78,54 +76,12 @@ The application is built using the following technologies:
                      └──────────────────┘
 ```
 
-### Dedicated Model Roles
-
-Model assignments can be mapped to specialized system roles under the UI Settings panel:
-
-| Role | Primary Responsibility |
-| :--- | :--- |
-| **Orchestrator** | Session supervisor, intent classifier, and router. |
-| **Cheap Fast Model** | Simple chats, standard inquiries, and text-only queries. |
-| **Reasoning Engine** | Complex algorithmic design, planning, math, and workflows. |
-| **Coding Specialist** | Code generation, debugging, refactoring, and AST scanning. |
-| **Multimodal Processor** | Image inspection, video parsing, PDF scanning, and audio OCR. |
-| **Memory / Summarizer** | Fact extraction, database pruning, context summarization. |
-| **Speech-to-Text (STT)**| Micro-button voice dictation to chat box. |
-| **Text-to-Speech (TTS)**| Speech synthesis voice response. |
-
----
-
-## Directory Structure
-
-```
-AgenticAI/
-├── src/
-│   ├── api/             # FastAPI endpoints & WebSocket communication
-│   ├── controller/      # Model routers, prompt templates & context assembly
-│   ├── models/          # Direct HTTP client wrappers & OpenRouter bindings
-│   ├── memory/          # SQLite stores, ChromaDB indexes, & Redis sync
-│   ├── processors/      # Image base64 generators & file parsing utilities
-│   ├── tools/           # Terminal manager, file explorer, & MCP hosts
-│   ├── aggregators/     # Sub-agent managers & consensus combiners
-│   └── utils/           # Configuration managers and cost trackers
-├── ui/
-│   ├── src-tauri/       # Tauri configuration & Rust window-tray IPC handles
-│   └── src/             # React + Ant Design glassmorphic UI components
-├── bin/
-│   └── redis/           # Portable pre-compiled Redis binaries
-└── data/
-    ├── sqlite/          # Main SQLite storage files
-    ├── chroma/          # Vector embeddings index databases
-    └── documents/       # Local cached documents & media files
-```
-
 ---
 
 ## Installation and Configuration
 
 ### Prerequisites
-
-- **Python 3.9+**
+- **Python 3.9+** (Python 3.12+ recommended)
 - **Node.js v18+** and **npm**
 - **Cargo / Rust** (Only required if compiling Tauri binaries from source)
 
@@ -134,15 +90,15 @@ AgenticAI/
 Clone this repository and set up a virtual environment:
 
 ```bash
-git clone <repository-url>
-cd AgenticAI
+git clone https://github.com/Arthur-101/CockroachDB.git CockroachSRE
+cd CockroachSRE
 
 # Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
 # Install Python backend packages
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 ```
 
 Navigate to the `ui` directory and install front-end dependencies:
@@ -160,53 +116,42 @@ Create a `.env` file in the project root:
 cp .env.example .env
 ```
 
-Open `.env` and set the following basic parameters:
-```env
-# OpenRouter API Key (required for orchestrator routing and fallbacks)
-OPENROUTER_API_KEY=your_key_here
+Open `.env` and set the following parameters:
 
-# Local Database Configuration (optional overrides)
-SQLITE_DB_PATH=data/agenticai.db
-CHROMA_DB_PATH=data/chroma
+```env
+# Database Connection (CockroachDB Serverless Cluster)
+COCKROACH_DATABASE_URL=postgresql://saurav0142:YOUR_PASS@cockroachsre-dev-31720.j77.aws-ap-south-1.cockroachlabs.cloud:26257/defaultdb?sslmode=verify-full
+
+# AWS Bedrock Configuration
+AWS_ACCESS_KEY_ID=YOUR_AWS_ACCESS_KEY_ID
+AWS_SECRET_ACCESS_KEY=YOUR_AWS_SECRET_ACCESS_KEY
+AWS_REGION=ap-south-1
+
+# Google AI Studio Configuration (Orchestrator fallback)
+GEMINI_API_KEY=YOUR_GEMINI_API_KEY
+
+# CockroachDB MCP Integration
+COCKROACH_MCP_URL=https://cockroachlabs.cloud/mcp
+COCKROACH_MCP_CLUSTER_ID=7f4a4a09-a2fd-4753-9d7a-7f213f73940c
 ```
 
 ### 3. Direct API Keys Configuration
 
-For direct API providers (Google AI Studio, OpenAI, Anthropic, Groq, Mistral AI), API keys are entered directly and stored securely in the SQLite database (`api_keys` table) using the Settings interface within the application.
-
-You do not need to add these keys to your `.env` file. To configure keys:
-1. Launch the Tauri application.
-2. Open the **Settings Modal** (via the gear icon in the UI or tray menu).
-3. Navigate to the **Keys & Model Settings** tab.
-4. Input your provider keys and click **Test Connection** to verify zero-quota connectivity.
-5. Save changes. Keys will be dynamically loaded mid-session.
+Additional API keys (OpenAI, Anthropic, Groq, Mistral AI) can be configured dynamically within the application UI Settings Drawer (saved securely inside the CockroachDB `api_keys` table). No manual database inserting is required.
 
 ---
 
 ## Running the Application
 
-You can run AgenticAI in CLI mode or launch the Tauri Desktop UI wrapper.
-
-### CLI Mode
-
-To interact directly from the terminal:
+### Backend Server (FastAPI JSON-RPC WebSocket)
+To start the backend service:
 
 ```bash
-# Start an interactive CLI chat
-python main.py chat
-
-# Show system statistics and costs
-python main.py stats
-
-# List available models
-python main.py models
-
-# Show conversation history
-python main.py history
+python main.py
 ```
+This initializes the CockroachDB connection, auto-starts the bundled portable Redis engine, downloads vector models, and boots the FastAPI WebSocket server.
 
 ### Desktop UI Mode (Tauri)
-
 To launch the desktop interface:
 
 ```bash
@@ -214,12 +159,9 @@ cd ui
 npm run tauri dev
 ```
 
-This starts the Ant Design dark glassmorphic window, boots the dynamic Python backend, spins up the portable Redis database, and creates a system tray icon on Windows.
-
 ---
 
-## Security and Cost Management
-
-- **User-in-the-Loop Permissions**: Operations modifying files, writing to directories, or launching sub-agent tool runs require interactive confirmation or desktop notification consent.
-- **Budget Protection**: Configurable in settings, supporting alert thresholds (e.g., 75% warn) and hard caps (100% block/auto-downgrade) to prevent runaway charges.
-- **Zero-Quota API Checks**: Model settings screen queries catalog endpoint models directly rather than executing dummy text completions, avoiding unnecessary cost or quota exceptions.
+## Security & User Controls
+- **User-in-the-Loop Confirmation**: File writes, command executions, and model settings adjustments require interactive prompt approvals.
+- **Budget Alerts**: Configurable limits monitor token expenses per model, issuing soft warnings and hard stops to prevent runaway resource consumption.
+- **Metadata Catalog Testing**: Model validation calls verify API connectivity directly via model listing schemas instead of generating token completions.
