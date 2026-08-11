@@ -22,6 +22,10 @@ class BasicTools:
     def __init__(self, require_permission: bool = True):
         self.require_permission = require_permission
         self.permission_cache = {}
+        from src.memory.cockroach_store import SQLiteMemoryStore
+        from src.memory.vector_store import VectorMemoryStore
+        self.db = SQLiteMemoryStore()
+        self.vector_store = VectorMemoryStore()
     
     def get_current_directory(self) -> Dict[str, Any]:
         """Get current working directory."""
@@ -547,6 +551,172 @@ class BasicTools:
                 "message": f"Error asking expert model: {str(e)}"
             }
 
+    def ingest_incident(
+        self,
+        title: str,
+        description: Optional[str] = None,
+        severity: str = "P3",
+        service_name: Optional[str] = None,
+        status: str = "NEW",
+        root_cause: Optional[str] = None,
+        metadata: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Save a new SRE incident and index details in vector database for RAG search."""
+        try:
+            parsed_metadata = None
+            if metadata:
+                try:
+                    parsed_metadata = json.loads(metadata) if isinstance(metadata, str) else metadata
+                except Exception:
+                    parsed_metadata = {"raw_metadata": metadata}
+
+            # Save to CockroachDB SQL
+            inc_id = self.db.save_incident(
+                title=title,
+                description=description or "",
+                severity=severity,
+                service_name=service_name or "",
+                metadata=parsed_metadata
+            )
+            
+            # Embed and index details in vector store for RAG retrieval
+            doc_content = f"Incident [{inc_id}] (Severity: {severity}, Service: {service_name or 'unknown'}, Status: {status})\nTitle: {title}\nDescription: {description or ''}\nMetadata: {metadata or ''}"
+            self.vector_store.add_document(
+                file_path=f"incident:{inc_id}",
+                content=doc_content
+            )
+            
+            return {
+                "success": True,
+                "result": {"incident_id": inc_id},
+                "message": f"Successfully ingested incident {inc_id} and indexed in pgvector."
+            }
+        except Exception as e:
+            return {"success": False, "result": None, "message": f"Failed to ingest incident: {e}"}
+
+    def save_runbook(
+        self,
+        title: str,
+        content: str,
+        service_name: Optional[str] = None,
+        author: Optional[str] = "SRE Assistant"
+    ) -> Dict[str, Any]:
+        """Save a step-by-step diagnostic runbook / playbook and index details in vector database for RAG."""
+        try:
+            # Save to CockroachDB SQL
+            rb_id = self.db.save_runbook(
+                title=title,
+                content=content,
+                service_name=service_name or "",
+                author=author or ""
+            )
+            
+            # Embed and index content in vector store for RAG
+            doc_content = f"Runbook Playbook [{rb_id}] for service '{service_name or 'unknown'}':\nTitle: {title}\nInstructions:\n{content}"
+            self.vector_store.add_document(
+                file_path=f"runbook:{rb_id}",
+                content=doc_content
+            )
+            
+            return {
+                "success": True,
+                "result": {"runbook_id": rb_id},
+                "message": f"Successfully stored runbook {rb_id} and indexed in pgvector."
+            }
+        except Exception as e:
+            return {"success": False, "result": None, "message": f"Failed to save runbook: {e}"}
+
+    def record_fix_action(
+        self,
+        incident_id: str,
+        action_taken: str,
+        success: int = 1,
+        engineer_notes: Optional[str] = None,
+        runbook_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Record a resolution or fix action taken for an incident, update status, and index fix history for RAG."""
+        try:
+            # Save to CockroachDB SQL
+            fix_id = self.db.save_fix_history(
+                incident_id=incident_id,
+                action_taken=action_taken,
+                engineer_notes=engineer_notes or "",
+                runbook_id=runbook_id,
+                success=(success == 1)
+            )
+            
+            # Auto-resolve incident if successful
+            if success == 1:
+                self.db.resolve_incident(
+                    incident_id=incident_id,
+                    root_cause=engineer_notes or "Automatic resolution."
+                )
+                
+            # Embed and index fix inside vector database so future RAG lookups can locate past resolutions
+            doc_content = f"Resolution Action for Incident [{incident_id}] (Success: {success == 1}):\nAction Taken: {action_taken}\nEngineer Notes: {engineer_notes or ''}"
+            self.vector_store.add_document(
+                file_path=f"fix:{fix_id}",
+                content=doc_content
+            )
+            
+            return {
+                "success": True,
+                "result": {"fix_id": fix_id},
+                "message": f"Recorded fix action {fix_id}. Incident {incident_id} resolved: {success == 1}"
+            }
+        except Exception as e:
+            return {"success": False, "result": None, "message": f"Failed to record fix action: {e}"}
+
+    def get_incidents(
+        self,
+        status: Optional[str] = None,
+        severity: Optional[str] = None,
+        service_name: Optional[str] = None,
+        limit: int = 10
+    ) -> Dict[str, Any]:
+        """Retrieve recent SRE incidents from CockroachDB."""
+        try:
+            incidents = self.db.get_incidents(status=status, severity=severity, service_name=service_name, limit=limit)
+            return {
+                "success": True,
+                "result": incidents,
+                "message": f"Retrieved {len(incidents)} incidents."
+            }
+        except Exception as e:
+            return {"success": False, "result": None, "message": f"Failed to query incidents: {e}"}
+
+    def get_runbooks(
+        self,
+        service_name: Optional[str] = None,
+        limit: int = 10
+    ) -> Dict[str, Any]:
+        """Retrieve diagnostic runbooks from CockroachDB."""
+        try:
+            runbooks = self.db.get_runbooks(service_name=service_name, limit=limit)
+            return {
+                "success": True,
+                "result": runbooks,
+                "message": f"Retrieved {len(runbooks)} runbooks."
+            }
+        except Exception as e:
+            return {"success": False, "result": None, "message": f"Failed to query runbooks: {e}"}
+
+    def get_fix_history(
+        self,
+        incident_id: Optional[str] = None,
+        limit: int = 10
+    ) -> Dict[str, Any]:
+        """Retrieve fix actions history from CockroachDB."""
+        try:
+            history = self.db.get_fix_history(incident_id=incident_id, limit=limit)
+            return {
+                "success": True,
+                "result": history,
+                "message": f"Retrieved {len(history)} fix records."
+            }
+        except Exception as e:
+            return {"success": False, "result": None, "message": f"Failed to query fix history: {e}"}
+
     def _has_permission(self, action: str, resource: str) -> bool:
         """Check if permission is granted for an action on a resource."""
         permission_key = f"{action}:{resource}"
@@ -800,6 +970,157 @@ class BasicTools:
                     }
                 },
                 "returns": "List of line match dicts containing filename, line number, and content"
+            },
+            "ingest_incident": {
+                "description": "Ingest and register a new SRE production incident in CockroachDB and index it in the pgvector database for semantic RAG search.",
+                "parameters": {
+                    "title": {
+                        "type": "string",
+                        "description": "Short summary of the incident/alert e.g., 'auth-service: HTTP 504 gateway timeout'",
+                        "required": True
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Detailed description of the incident symptoms or logs",
+                        "required": False
+                    },
+                    "severity": {
+                        "type": "string",
+                        "description": "Severity level: P1 (Critical), P2 (Major), P3 (Medium), P4 (Minor)",
+                        "required": False
+                    },
+                    "service_name": {
+                        "type": "string",
+                        "description": "Affected microservice or component name",
+                        "required": False
+                    },
+                    "status": {
+                        "type": "string",
+                        "description": "Current status: NEW, INVESTIGATING, MITIGATED, RESOLVED",
+                        "required": False
+                    },
+                    "root_cause": {
+                        "type": "string",
+                        "description": "Identified root cause (optional)",
+                        "required": False
+                    },
+                    "metadata": {
+                        "type": "string",
+                        "description": "JSON string containing diagnostic alert data or log snippets",
+                        "required": False
+                    }
+                },
+                "returns": "Ingested incident ID"
+            },
+            "save_runbook": {
+                "description": "Store a step-by-step diagnostic or resolution runbook playbook and index it in the pgvector database for semantic RAG search.",
+                "parameters": {
+                    "title": {
+                        "type": "string",
+                        "description": "Title of the runbook playbook e.g., 'DB Connection Leaks mitigation'",
+                        "required": True
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "Detailed step-by-step instructions or remediation scripts",
+                        "required": True
+                    },
+                    "service_name": {
+                        "type": "string",
+                        "description": "Associated microservice or component name",
+                        "required": False
+                    },
+                    "author": {
+                        "type": "string",
+                        "description": "Runbook author name",
+                        "required": False
+                    }
+                },
+                "returns": "Stored runbook ID"
+            },
+            "record_fix_action": {
+                "description": "Record a fix or resolution action taken for an incident, update status, and index it in the pgvector database for future retrieval.",
+                "parameters": {
+                    "incident_id": {
+                        "type": "string",
+                        "description": "The ID of the incident being resolved",
+                        "required": True
+                    },
+                    "action_taken": {
+                        "type": "string",
+                        "description": "Detailed summary of the fix action taken (e.g. commands run, service restarted)",
+                        "required": True
+                    },
+                    "success": {
+                        "type": "integer",
+                        "description": "1 = resolved/successful, 0 = failed/unsuccessful",
+                        "required": False
+                    },
+                    "engineer_notes": {
+                        "type": "string",
+                        "description": "Diagnostic findings or post-mortem notes",
+                        "required": False
+                    },
+                    "runbook_id": {
+                        "type": "string",
+                        "description": "The ID of the runbook playbook that was followed (optional)",
+                        "required": False
+                    }
+                },
+                "returns": "Recorded fix ID"
+            },
+            "get_incidents": {
+                "description": "Retrieve recent SRE incidents from CockroachDB.",
+                "parameters": {
+                    "status": {
+                        "type": "string",
+                        "description": "Filter by status: NEW, INVESTIGATING, MITIGATED, RESOLVED",
+                        "required": False
+                    },
+                    "severity": {
+                        "type": "string",
+                        "description": "Filter by severity e.g. P1",
+                        "required": False
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of incidents to return (default: 10)",
+                        "required": False
+                    }
+                },
+                "returns": "List of incidents"
+            },
+            "get_runbooks": {
+                "description": "Retrieve SRE runbook playbooks from CockroachDB.",
+                "parameters": {
+                    "service_name": {
+                        "type": "string",
+                        "description": "Filter by associated microservice name",
+                        "required": False
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of runbooks to return (default: 10)",
+                        "required": False
+                    }
+                },
+                "returns": "List of runbook playbooks"
+            },
+            "get_fix_history": {
+                "description": "Retrieve fix actions history from CockroachDB.",
+                "parameters": {
+                    "incident_id": {
+                        "type": "string",
+                        "description": "Filter by specific incident ID",
+                        "required": False
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of fix records to return (default: 10)",
+                        "required": False
+                    }
+                },
+                "returns": "List of fix records"
             }
         }
 
@@ -874,6 +1195,14 @@ class ToolManager:
             "get_file_tree": self.file_explorer.get_file_tree,
             "find_files": self.file_explorer.find_files,
             "grep_search": self.file_explorer.grep_search,
+            
+            # Custom SRE Tools
+            "ingest_incident": self.basic_tools.ingest_incident,
+            "save_runbook": self.basic_tools.save_runbook,
+            "record_fix_action": self.basic_tools.record_fix_action,
+            "get_incidents": self.basic_tools.get_incidents,
+            "get_runbooks": self.basic_tools.get_runbooks,
+            "get_fix_history": self.basic_tools.get_fix_history,
         }
     
     def execute_tool(self, tool_name: str, parameters: Dict[str, Any]) -> Dict[str, Any]:

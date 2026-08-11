@@ -940,9 +940,10 @@ class CockroachMemoryStore:
         self,
         status: Optional[str] = None,
         severity: Optional[str] = None,
+        service_name: Optional[str] = None,
         limit: int = 20,
     ) -> List[Dict[str, Any]]:
-        """Retrieve incidents, optionally filtered by status/severity."""
+        """Retrieve incidents, optionally filtered by status/severity/service."""
         conditions: List[str] = []
         params: List[Any] = []
         if status:
@@ -951,6 +952,9 @@ class CockroachMemoryStore:
         if severity:
             conditions.append("severity = %s")
             params.append(severity.upper())
+        if service_name:
+            conditions.append("service_name = %s")
+            params.append(service_name)
         where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
         cur = self._cursor()
         cur.execute(
