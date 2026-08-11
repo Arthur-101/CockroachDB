@@ -1,4 +1,6 @@
-# AgenticAI
+# CockroachAI
+
+`This is another version of AgenticAI with the tech stack changes to match with the CockroachDB Hackathon`
 
 AgenticAI is a multi-model AI agent system built on a modular Model Context Protocol (MCP) style architecture. Rather than relying on a single large language model for all tasks, AgenticAI dynamically orchestrates, selects, and routes tasks to specialized models optimized for speed, cost, reasoning, or multimodal capabilities.
 
