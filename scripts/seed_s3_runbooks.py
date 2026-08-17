@@ -209,6 +209,113 @@ RESTORE TABLE incidents FROM 's3://cockroachsre-knowledge-base/backups/latest'
 - [ ] Test application connectivity
 - [ ] Update incident log with restore details
 """,
+
+    "transaction-contention-locks.md": """# Runbook: CockroachDB Transaction Contention & Deadlocks
+
+## Symptoms
+- Applications receiving PostgreSQL error `40001: restart transaction: TransactionRetryWithProtoRefreshError`
+- High transaction abort and retry counts in CockroachDB Console
+- Latency spike on update queries on tables like `inventory`, `accounts`, `orders`
+
+## Immediate Diagnostics
+1. Identify high-contention queries:
+   ```sql
+   SELECT query, contention_time, retry_count
+   FROM crdb_internal.statement_statistics
+   ORDER BY contention_time DESC LIMIT 10;
+   ```
+2. Check active lock holders and waiting transactions:
+   ```sql
+   SELECT txn_id, waiting_on, key, lock_mode
+   FROM crdb_internal.cluster_locks
+   ORDER BY lock_duration DESC LIMIT 20;
+   ```
+
+## Root Causes
+- Multiple concurrent transactions updating the same row simultaneously (e.g. inventory counters)
+- Long-running transactions interleaving SELECT and UPDATE statements
+- Missing `SELECT ... FOR UPDATE` leading to lock upgrade conflicts
+
+## Resolution Steps
+1. **Application Retry Loop**: Ensure the client application implements exponential backoff and jitter for `40001` serialization failures.
+2. **Row Locking Ordering**: Enforce deterministic locking order across all microservices.
+3. **Historical Reads**: Move analytics and reporting queries to `AS OF SYSTEM TIME follower_read_timestamp()`.
+4. **Batch Updates**: Group high-frequency row increments using batch updates or asynchronous queue aggregators.
+
+## Prevention & Tuning
+- Set `sql.defaults.statement_timeout = '15s'`
+- Enable lock table metrics: `SHOW CLUSTER SETTING kv.lock_table.enabled;`
+""",
+
+    "cross-region-latency-spikes.md": """# Runbook: CockroachDB Cross-Region Latency & Multi-Region Topology
+
+## Symptoms
+- p99 read and write latency surges (>150ms) for requests in specific cloud regions (e.g. `eu-west-1` or `ap-south-1`)
+- Cross-region Raft consensus round-trips bottlenecking OLTP transactions
+
+## Immediate Diagnostics
+1. Check multi-region node distribution:
+   ```sql
+   SHOW REGIONS FROM CLUSTER;
+   SHOW SURVIVAL GOAL FROM DATABASE defaultdb;
+   ```
+2. Check table locality and table regional types:
+   ```sql
+   SELECT table_name, locality_config FROM crdb_internal.tables WHERE table_schema = 'public';
+   ```
+3. Inspect round-trip network latency between regions:
+   ```sql
+   SELECT * FROM crdb_internal.node_to_node_latency ORDER BY latency_ms DESC;
+   ```
+
+## Resolution Steps
+1. **Regional Tables**: Convert latency-sensitive tables to `REGIONAL BY ROW` so rows are co-located with local users:
+   ```sql
+   ALTER TABLE orders SET LOCALITY REGIONAL BY ROW AS region;
+   ```
+2. **Global Reference Tables**: For read-heavy, low-write lookup tables, set locality to `GLOBAL`:
+   ```sql
+   ALTER TABLE product_catalog SET LOCALITY GLOBAL;
+   ```
+3. **Follower Reads**: Enable follower reads for read-mostly operations:
+   ```sql
+   SELECT * FROM accounts AS OF SYSTEM TIME follower_read_timestamp() WHERE account_id = '123';
+   ```
+""",
+
+    "schema-migration-failures.md": """# Runbook: Online Schema Changes & Large Table Backfills
+
+## Symptoms
+- `ALTER TABLE` or `CREATE INDEX` job stalled in state `running` for hours
+- Schema change blocking subsequent DDL operations
+- Node disk space decreasing rapidly during index backfill
+
+## Immediate Diagnostics
+1. Inspect running schema change jobs:
+   ```sql
+   SHOW JOBS WHERE job_type IN ('SCHEMA CHANGE', 'INDEX BACKFILL');
+   ```
+2. Check job progress and coordinator node:
+   ```sql
+   SELECT job_id, description, status, fraction_completed, error
+   FROM crdb_internal.jobs
+   WHERE status = 'running' ORDER BY created DESC;
+   ```
+
+## Resolution Steps
+1. **Pause or Cancel Runaway Jobs**:
+   ```sql
+   CANCEL JOB <job_id>;
+   ```
+2. **Off-Peak Index Creation**: Re-run large index builds with non-blocking concurrency:
+   ```sql
+   CREATE INDEX CONCURRENTLY idx_users_email ON users(email);
+   ```
+3. **Throttle Backfill Rate**: Reduce backfill chunk rate to minimize cluster CPU impact:
+   ```sql
+   SET CLUSTER SETTING kv.bulk_io_write.max_rate = '100MiB';
+   ```
+"""
 }
 
 INCIDENT_LOGS = {
@@ -243,6 +350,38 @@ INCIDENT_LOGS = {
   "fix_permanent": true,
   "tags": ["hot-spot", "cpu", "range", "uuid", "cockroachdb"]
 }""",
+
+    "INC-2026-003": """{
+  "incident_id": "INC-2026-003",
+  "title": "Lock Contention and 40001 Retries on checkout-service",
+  "severity": "P1",
+  "started_at": "2026-08-15T18:10:00Z",
+  "resolved_at": "2026-08-15T18:42:00Z",
+  "duration_minutes": 32,
+  "affected_service": "checkout-service / defaultdb.inventory",
+  "symptoms": ["Checkout failure rate spiked to 18%", "40001 TransactionRetryWithProtoRefreshError", "Connection pool waiting on locks"],
+  "root_cause": "Flash sale flash mob updating the same single row in inventory table simultaneously without batching",
+  "resolution": "Applied follower reads for inventory checks and partitioned inventory counters into 16 sharded slots.",
+  "runbook_used": "transaction-contention-locks.md",
+  "fix_permanent": true,
+  "tags": ["contention", "locks", "40001", "checkout", "cockroachdb"]
+}""",
+
+    "INC-2026-004": """{
+  "incident_id": "INC-2026-004",
+  "title": "Cross-Region Query Latency Spike in EU Users",
+  "severity": "P2",
+  "started_at": "2026-08-16T11:00:00Z",
+  "resolved_at": "2026-08-16T11:55:00Z",
+  "duration_minutes": 55,
+  "affected_service": "user-profile-service (eu-west-1)",
+  "symptoms": ["p99 latency for EU users increased from 12ms to 240ms", "Cross-region Raft round-trip to us-east-1"],
+  "root_cause": "New table user_profiles was created as REGIONAL IN us-east-1 instead of REGIONAL BY ROW",
+  "resolution": "Executed ALTER TABLE user_profiles SET LOCALITY REGIONAL BY ROW AS region. Latency dropped back to 9ms.",
+  "runbook_used": "cross-region-latency-spikes.md",
+  "fix_permanent": true,
+  "tags": ["multi-region", "latency", "locality", "cockroachdb"]
+}"""
 }
 
 
