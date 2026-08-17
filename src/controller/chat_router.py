@@ -294,13 +294,16 @@ class ChatRouter:
                     ORDER BY first_created ASC
                     """, (session_id,))
                     rows = cur.fetchall()
-                    summaries = [row["content_summary"] for row in rows]
-                    recent_summaries = [{"content_summary": s} for s in summaries]
+                    recent_summaries = [{"content_summary": row["content_summary"]} for row in rows]
             except Exception as e:
                 logger.debug(f"Could not retrieve recent summaries: {e}")
             
-            if summaries:
-                summary_text = "\n".join(f"- {s}" for s in summaries)
+            summary_texts = [
+                s.get("content_summary") for s in recent_summaries 
+                if isinstance(s, dict) and s.get("content_summary")
+            ]
+            if summary_texts:
+                summary_text = "\n".join(f"- {s}" for s in summary_texts)
                 context_messages.append(
                     Message(role="system", content=f"Summary of older conversation:\n{summary_text}")
                 )

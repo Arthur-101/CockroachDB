@@ -321,6 +321,10 @@ data/
   - Purged all emojis from backend Python source files (`consensus_aggregator.py`, `sub_agent_manager.py`, `provider_router.py`, `basic_tools.py`, `file_explorer_tool.py`, `config.py`, `test_mcp_client.py`, `test_mcp_normalization.py`, `scripts/init_cockroach.py`, `scripts/seed_s3_runbooks.py`, `scripts/test_sre_tools.py`, `scripts/test_vector_store.py`).
   - Replaced emojis with clean, structured standard tags (`[INFO]`, `[SUCCESS]`, `[WARNING]`, `[ERROR]`, `[TEAM]`, `[SUB-AGENT]`, `[SECURITY]`, `[DIR]`, `[FILE]`, `[ROOT]`). Verified with repo-wide regex scanner: 0 emojis remaining.
 
+- **Chat Router Context Assembly Bugfix (`src/controller/chat_router.py`)**:
+  - Fixed `UnboundLocalError: cannot access local variable 'summaries' where it is not associated with a value` in `_assemble_context`.
+  - Safely extract `summary_texts` from `recent_summaries` dict structures across both CockroachDB and SQLite memory stores.
+
 ## Planned Future Roadmap Tasks (Notion Tracked)
 - **Task 1: Live Token Usage & Budget Warning Tracker Widget**: Add live token/cost meter in top header bar showing expenditure ($) per session/model with dynamic OpenRouter pricing catalog sync, multi-tier protection (75% Soft Alert, 90% Auto-Downgrade, 100% Hard Cap), sub-agent cost attribution tagging, atomic Redis sync, and an analytics drawer with spending graphs.
 - **Task 2: Expanded Native MCP Tools**: Build `SystemMonitorTool` (CPU/RAM/Disk), `ProcessManagerTool` (active task management), and `GitInspectorTool` (git diffs/commits).
