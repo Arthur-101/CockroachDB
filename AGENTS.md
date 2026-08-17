@@ -325,11 +325,10 @@ data/
   - Fixed Google AI Studio HTTP 400 `Proto field is not repeating, cannot start list` error caused by nested tool schemas containing array types (e.g. `type: ["object", "null"]`), `$defs`, and `$ref` references (e.g. from MCP tools like Notion).
   - Implemented `_sanitize_schema_for_gemini`: recursively inlines `$ref` from `$defs`/`definitions`, simplifies `anyOf`/`oneOf`/`allOf`, converts array types to single scalar strings with `nullable: true`, enforces mandatory `items` for array types, and strips unsupported metadata fields.
   - Implemented tool name normalization mapping non-alphanumeric characters (e.g. `API-post-search` -> `API_post_search`) with bidirectional translation on emitted function calls.
-- **Expanded S3 SRE Knowledge Base & Vector Index (`scripts/seed_s3_runbooks.py`)**:
-  - Expanded Amazon S3 knowledge base bucket `cockroachsre-knowledge-base` to 12 total objects (8 core SRE runbooks + 4 historical incident logs).
-  - Added runbooks: `transaction-contention-locks.md` (40001 retry handling & row lock ordering), `cross-region-latency-spikes.md` (table locality & REGIONAL BY ROW topology), `schema-migration-failures.md` (online DDL backfills & job management).
-  - Added historical incident postmortems: `INC-2026-003` (flash sale inventory lock contention) and `INC-2026-004` (cross-region locality misconfiguration).
-  - Synchronized and indexed all 12 objects into CockroachDB pgvector store.
+- **SRE Console 1st Tab & Direct AWS S3 Synchronization (`ui/src/components/ChatPanel.tsx`, `ui/src-tauri/src/lib.rs`)**:
+  - Reordered Settings modal tabs to prioritize operations: **1st Tab: SRE Console**, **2nd Tab: MCP Servers**, **3rd Tab: Models & API Keys**, **4th Tab: Memories & Persona**.
+  - Added dedicated **"Sync from AWS S3"** action button in the SRE Console header with live spinner, invoking `s3_sync_to_cockroachdb` via Tauri IPC and refreshing incident/runbook/fix tables.
+  - Configured automatic SRE data preloading in `initializeBackend` on app startup so all active incidents, playbooks, and resolution histories are immediately rendered with zero lag.
 
 ## Planned Future Roadmap Tasks (Notion Tracked)
 - **Task 1: Live Token Usage & Budget Warning Tracker Widget**: Add live token/cost meter in top header bar showing expenditure ($) per session/model with dynamic OpenRouter pricing catalog sync, multi-tier protection (75% Soft Alert, 90% Auto-Downgrade, 100% Hard Cap), sub-agent cost attribution tagging, atomic Redis sync, and an analytics drawer with spending graphs.
