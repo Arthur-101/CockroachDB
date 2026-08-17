@@ -12,8 +12,24 @@ import os
 import asyncio
 import subprocess
 
-# Add the project root to Python path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+# -----------------------------------------------------------------------
+# Resolve project root from THIS file's location and load .env explicitly
+# with an absolute path — works regardless of where Tauri spawns us from.
+# -----------------------------------------------------------------------
+_HERE = os.path.abspath(__file__)                        # …/src/api/embedded_backend.py
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(_HERE)))  # …/CockroachAI
+
+# Add project root to Python path
+sys.path.insert(0, _PROJECT_ROOT)
+
+# Load .env before any project module is imported (they read os.environ at import time)
+try:
+    from dotenv import load_dotenv
+    _env_path = os.path.join(_PROJECT_ROOT, ".env")
+    load_dotenv(dotenv_path=_env_path, override=False)
+    print(f"INFO: Loaded .env from {_env_path}", file=sys.stderr)
+except ImportError:
+    print("WARNING: python-dotenv not installed — .env not loaded automatically.", file=sys.stderr)
 
 from src.memory.cockroach_store import SQLiteMemoryStore, SessionManager
 from src.controller.chat_router import ChatRouter
