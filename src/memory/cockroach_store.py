@@ -522,7 +522,7 @@ class CockroachMemoryStore:
                 "tags": json.loads(r["tags_json"]) if r["tags_json"] else [],
                 "model_id": r["model_id"],
                 "tokens_used": r["tokens_used"],
-                "created_at": r["created_at"],
+                "created_at": r["created_at"].isoformat() if hasattr(r["created_at"], "isoformat") else str(r["created_at"]),
             }
             for r in rows
         ]
@@ -550,7 +550,7 @@ class CockroachMemoryStore:
                 {
                     "session_id": r["session_id"],
                     "title": title,
-                    "created_at": r["created_at"],
+                    "created_at": r["created_at"].isoformat() if hasattr(r["created_at"], "isoformat") else str(r["created_at"]),
                 }
             )
         return sessions
@@ -699,7 +699,7 @@ class CockroachMemoryStore:
                 "id": r["id"],
                 "content": r["content"],
                 "tags": json.loads(r["tags_json"]) if r["tags_json"] else [],
-                "created_at": r["created_at"],
+                "created_at": r["created_at"].isoformat() if hasattr(r["created_at"], "isoformat") else str(r["created_at"]),
             }
             for r in rows
         ]
@@ -734,7 +734,10 @@ class CockroachMemoryStore:
         cur.execute(
             "SELECT id, provider, label, key_value, is_active, added_at FROM api_keys ORDER BY added_at DESC"
         )
-        return [dict(r) for r in cur.fetchall()]
+        return [
+            {k: (v.isoformat() if hasattr(v, "isoformat") else v) for k, v in dict(r).items()}
+            for r in cur.fetchall()
+        ]
 
     def get_api_key_by_provider(self, provider: str) -> Optional[str]:
         """Get active API key string for a specific provider (with alias resolution)."""
@@ -977,7 +980,7 @@ class CockroachMemoryStore:
         rows = cur.fetchall()
         return [
             {
-                **dict(r),
+                **{k: (v.isoformat() if hasattr(v, "isoformat") else v) for k, v in dict(r).items()},
                 "metadata": json.loads(r["metadata"]) if r["metadata"] else {},
             }
             for r in rows
@@ -1045,7 +1048,10 @@ class CockroachMemoryStore:
                 """,
                 (limit,),
             )
-        return [dict(r) for r in cur.fetchall()]
+        return [
+            {k: (v.isoformat() if hasattr(v, "isoformat") else v) for k, v in dict(r).items()}
+            for r in cur.fetchall()
+        ]
 
     def save_fix_history(
         self,
@@ -1104,7 +1110,10 @@ class CockroachMemoryStore:
             )
         rows = cur.fetchall()
         return [
-            {**dict(r), "success": bool(r["success"])}
+            {
+                **{k: (v.isoformat() if hasattr(v, "isoformat") else v) for k, v in dict(r).items()},
+                "success": bool(r["success"])
+            }
             for r in rows
         ]
 

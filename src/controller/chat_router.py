@@ -600,7 +600,7 @@ class ChatRouter:
                     else:
                         result_val = tool_result.get("result")
                         if isinstance(result_val, (dict, list)):
-                            result_str = json.dumps(result_val)
+                            result_str = json.dumps(result_val, default=str)
                         else:
                             result_str = str(result_val)
                             
@@ -617,7 +617,7 @@ class ChatRouter:
                             "model": f"{role_name} ({model_used})"
                         }
                         import sys
-                        print(f"SUB_AGENT_MSG:{json.dumps(log_msg)}", file=sys.stderr, flush=True)
+                        print(f"SUB_AGENT_MSG:{json.dumps(log_msg, default=str)}", file=sys.stderr, flush=True)
                         
                         # Save sub-agent interaction to database so it persists across sessions
                         self.memory_store.save_message(
@@ -646,7 +646,7 @@ class ChatRouter:
                             "model": "Terminal"
                         }
                         import sys
-                        print(f"SUB_AGENT_MSG:{json.dumps(log_msg)}", file=sys.stderr, flush=True)
+                        print(f"SUB_AGENT_MSG:{json.dumps(log_msg, default=str)}", file=sys.stderr, flush=True)
                         
                         # Save terminal command to database so it persists across sessions
                         self.memory_store.save_message(
@@ -663,14 +663,14 @@ class ChatRouter:
                         print(f"[{current_time}] [TOOL] Completed: {name} | Status: {'Success' if tool_result.get('success') else 'Failed'}", file=sys.stderr, flush=True)
                         
                         try:
-                            args_str = json.dumps(arguments, indent=2)
+                            args_str = json.dumps(arguments, indent=2, default=str)
                         except Exception:
                             args_str = str(arguments)
                         
                         result_val = tool_result.get("result", "")
                         if isinstance(result_val, (dict, list)):
                             try:
-                                result_disp = json.dumps(result_val, indent=2)
+                                result_disp = json.dumps(result_val, indent=2, default=str)
                             except Exception:
                                 result_disp = str(result_val)
                         else:
@@ -684,7 +684,7 @@ class ChatRouter:
                             "content": f"**Tool Call**: `{name}`\n\n**Arguments**:\n```json\n{args_str}\n```\n\n**Result**:\n```text\n{result_disp}\n```",
                             "model": f"Tool: {name}"
                         }
-                        print(f"SUB_AGENT_MSG:{json.dumps(log_msg)}", file=sys.stderr, flush=True)
+                        print(f"SUB_AGENT_MSG:{json.dumps(log_msg, default=str)}", file=sys.stderr, flush=True)
                         
                         # Save tool execution log to database so it persists across sessions
                         self.memory_store.save_message(

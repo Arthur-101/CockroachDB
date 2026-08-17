@@ -248,7 +248,38 @@ class S3KnowledgeBase:
                     content=content,
                 )
                 indexed += 1
-                logger.info(f"Indexed s3://{self.bucket}/{key} into CockroachDB")
+                logger.info(f"Indexed s3://{self.bucket}/{key} into CockroachDB pgvector")
+
+                try:
+                    from src.memory.cockroach_store import CockroachMemoryStore
+                    db = CockroachMemoryStore()
+                    if key.startswith("runbooks/") and key.endswith(".md"):
+                        title = key.split("/")[-1].replace(".md", "").replace("-", " ").title()
+                        first_line = content.split("\n")[0]
+                        if first_line.startswith("#"):
+                            title = first_line.lstrip("#").strip()
+                        db.save_runbook(
+                            title=title,
+                            content=content,
+                            service_name="cockroachdb",
+                            author="AWS S3 Sync",
+                        )
+                    elif key.startswith("incidents/"):
+                        try:
+                            import json
+                            inc_data = json.loads(content)
+                            if isinstance(inc_data, dict):
+                                db.create_incident(
+                                    title=inc_data.get("title", key),
+                                    description=json.dumps(inc_data.get("symptoms", inc_data.get("root_cause", ""))),
+                                    severity=inc_data.get("severity", "P2"),
+                                    service_name=inc_data.get("affected_service", "cockroachdb"),
+                                    metadata=inc_data,
+                                )
+                        except Exception:
+                            pass
+                except Exception as ex:
+                    logger.debug(f"Relational sync note: {ex}")
             except Exception as e:
                 errors.append({"key": key, "error": str(e)})
                 logger.error(f"Failed to index {key}: {e}")
