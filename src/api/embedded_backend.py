@@ -800,57 +800,6 @@ class EmbeddedBackend:
                 "id": params.get("request_id")
             }
 
-
-async def main_async():
-    """Async main entry point."""
-    # Redirect standard output to stderr to prevent random prints from breaking JSON-RPC
-    original_stdout = sys.stdout
-    sys.stdout = sys.stderr
-    
-    backend = EmbeddedBackend()
-    
-    # Ensure original stdout is line-buffered
-    original_stdout.reconfigure(line_buffering=True)
-    
-    print("INFO: Embedded backend ready, waiting for JSON-RPC requests...", file=sys.stderr)
-    
-    loop = asyncio.get_event_loop()
-    
-    while True:
-        # Read from stdin without blocking the asyncio event loop
-        line = await loop.run_in_executor(None, sys.stdin.readline)
-        if not line:
-            break
-        if not line.strip():
-            continue
-            
-        try:
-            request = json.loads(line)
-            # Await the processing so responses remain somewhat ordered
-            response = await backend.process_request(request)
-            print(json.dumps(response, default=str), file=original_stdout, flush=True)
-        except json.JSONDecodeError:
-            error_response = {
-                "jsonrpc": "2.0",
-                "error": {
-                    "code": -32700,
-                    "message": "Parse error: Invalid JSON"
-                },
-                "id": None
-            }
-            print(json.dumps(error_response), file=original_stdout, flush=True)
-        except Exception as e:
-            error_response = {
-                "jsonrpc": "2.0",
-                "error": {
-                    "code": -32603,
-                    "message": f"Internal error: {str(e)}"
-                },
-                "id": None
-            }
-            print(json.dumps(error_response), file=original_stdout, flush=True)
-
-
     # ==================================================================
     # Amazon S3 Knowledge Base handlers
     # ==================================================================
@@ -959,6 +908,56 @@ async def main_async():
             },
             "id": None
         }
+
+
+async def main_async():
+    """Async main entry point."""
+    # Redirect standard output to stderr to prevent random prints from breaking JSON-RPC
+    original_stdout = sys.stdout
+    sys.stdout = sys.stderr
+    
+    backend = EmbeddedBackend()
+    
+    # Ensure original stdout is line-buffered
+    original_stdout.reconfigure(line_buffering=True)
+    
+    print("INFO: Embedded backend ready, waiting for JSON-RPC requests...", file=sys.stderr)
+    
+    loop = asyncio.get_event_loop()
+    
+    while True:
+        # Read from stdin without blocking the asyncio event loop
+        line = await loop.run_in_executor(None, sys.stdin.readline)
+        if not line:
+            break
+        if not line.strip():
+            continue
+            
+        try:
+            request = json.loads(line)
+            # Await the processing so responses remain somewhat ordered
+            response = await backend.process_request(request)
+            print(json.dumps(response, default=str), file=original_stdout, flush=True)
+        except json.JSONDecodeError:
+            error_response = {
+                "jsonrpc": "2.0",
+                "error": {
+                    "code": -32700,
+                    "message": "Parse error: Invalid JSON"
+                },
+                "id": None
+            }
+            print(json.dumps(error_response), file=original_stdout, flush=True)
+        except Exception as e:
+            error_response = {
+                "jsonrpc": "2.0",
+                "error": {
+                    "code": -32603,
+                    "message": f"Internal error: {str(e)}"
+                },
+                "id": None
+            }
+            print(json.dumps(error_response), file=original_stdout, flush=True)
 
 
 def main():

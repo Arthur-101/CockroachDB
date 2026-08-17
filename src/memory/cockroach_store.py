@@ -962,7 +962,7 @@ class CockroachMemoryStore:
             conditions.append("severity = %s")
             params.append(severity.upper())
         if service_name:
-            conditions.append("service_name = %s")
+            conditions.append("LOWER(service_name) = LOWER(%s)")
             params.append(service_name)
         where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
         cur = self._cursor()
@@ -1032,7 +1032,7 @@ class CockroachMemoryStore:
                 """
                 SELECT id, title, content, service_name, author, created_at, updated_at
                 FROM runbooks
-                WHERE service_name = %s
+                WHERE LOWER(service_name) = LOWER(%s)
                 ORDER BY updated_at DESC
                 LIMIT %s
                 """,

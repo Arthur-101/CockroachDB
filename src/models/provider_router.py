@@ -637,11 +637,12 @@ class ProviderRouter:
 
         # Auto-map deprecated/migrated model identifiers to active Google models
         model_aliases = {
-            "gemini-2.0-flash": "gemini-3.6-flash",
+            "gemini-2.0-flash": "gemini-3.5-flash-lite",
             "gemini-2.0-flash-lite": "gemini-3.5-flash-lite",
-            "gemini-2.5-flash": "gemini-3.6-flash",
+            "gemini-2.5-flash": "gemini-3.5-flash-lite",
+            "gemini-2.5-flash-lite": "gemini-3.5-flash-lite",
             "gemini-1.5-flash": "gemini-3.5-flash-lite",
-            "gemini-1.5-pro": "gemini-2.5-pro",
+            "gemini-1.5-pro": "gemini-3.5-flash-light",
         }
         resolved_model = model_aliases.get(model_name.strip(), model_name.strip())
 
@@ -841,19 +842,29 @@ class ProviderRouter:
                     system_instruction_parts.append({"text": txt})
 
             elif role == "tool":
-                # Tool execution result -> Gemini 'function' role with functionResponse
+                # Tool execution result -> Gemini functionResponse in 'user' role
                 orig_tool_name = m.get("name", "tool")
                 sanitized_tool_name = orig_to_sanitized_map.get(orig_tool_name, orig_tool_name)
                 try:
                     resp_data = json.loads(raw_content) if isinstance(raw_content, str) else raw_content
                     if not isinstance(resp_data, dict):
-                        resp_data = {"output": str(resp_data)}
+                        resp_data = {"response": resp_data}
                 except Exception:
-                    resp_data = {"output": str(raw_content)}
-                contents.append({
-                    "role": "function",
-                    "parts": [{"functionResponse": {"name": sanitized_tool_name, "response": resp_data}}]
-                })
+                    resp_data = {"response": str(raw_content)}
+                
+                tool_part = {
+                    "functionResponse": {
+                        "name": sanitized_tool_name,
+                        "response": resp_data,
+                    }
+                }
+                if contents and contents[-1]["role"] == "user":
+                    contents[-1]["parts"].append(tool_part)
+                else:
+                    contents.append({
+                        "role": "user",
+                        "parts": [tool_part]
+                    })
 
             else:
                 # user / assistant / model turn
@@ -869,7 +880,12 @@ class ProviderRouter:
                             args = json.loads(tc.get("function", {}).get("arguments", "{}"))
                         except Exception:
                             args = {}
-                        parts.append({"functionCall": {"name": sanitized_fn_name, "args": args}})
+                        fc_part = {"functionCall": {"name": sanitized_fn_name, "args": args}}
+                        if "thoughtSignature" in tc:
+                            fc_part["thoughtSignature"] = tc["thoughtSignature"]
+                        elif "thought_signature" in tc:
+                            fc_part["thoughtSignature"] = tc["thought_signature"]
+                        parts.append(fc_part)
 
                 # Merge consecutive same-role turns (Gemini rejects duplicate adjacent roles)
                 if contents and contents[-1]["role"] == g_role:
@@ -916,14 +932,19 @@ class ProviderRouter:
                     fc = p["functionCall"]
                     sanitized_fn = fc.get("name", "")
                     orig_fn = tool_name_map.get(sanitized_fn, sanitized_fn)
-                    tool_calls_out.append({
+                    tc_dict = {
                         "id": f"call_gemini_{i}",
                         "type": "function",
                         "function": {
                             "name": orig_fn,
                             "arguments": json.dumps(fc.get("args", {}))
                         }
-                    })
+                    }
+                    if "thoughtSignature" in p:
+                        tc_dict["thoughtSignature"] = p["thoughtSignature"]
+                    elif "thought_signature" in p:
+                        tc_dict["thoughtSignature"] = p["thought_signature"]
+                    tool_calls_out.append(tc_dict)
 
             tokens = data.get("usageMetadata", {}).get("totalTokenCount", 0)
             return {
