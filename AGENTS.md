@@ -321,9 +321,11 @@ data/
   - Purged all emojis from backend Python source files (`consensus_aggregator.py`, `sub_agent_manager.py`, `provider_router.py`, `basic_tools.py`, `file_explorer_tool.py`, `config.py`, `test_mcp_client.py`, `test_mcp_normalization.py`, `scripts/init_cockroach.py`, `scripts/seed_s3_runbooks.py`, `scripts/test_sre_tools.py`, `scripts/test_vector_store.py`).
   - Replaced emojis with clean, structured standard tags (`[INFO]`, `[SUCCESS]`, `[WARNING]`, `[ERROR]`, `[TEAM]`, `[SUB-AGENT]`, `[SECURITY]`, `[DIR]`, `[FILE]`, `[ROOT]`). Verified with repo-wide regex scanner: 0 emojis remaining.
 
-- **Chat Router Context Assembly Bugfix (`src/controller/chat_router.py`)**:
-  - Fixed `UnboundLocalError: cannot access local variable 'summaries' where it is not associated with a value` in `_assemble_context`.
-  - Safely extract `summary_texts` from `recent_summaries` dict structures across both CockroachDB and SQLite memory stores.
+- **Google AI Studio Schema Sanitizer & Tool Translation (`src/models/provider_router.py`)**:
+  - Fixed Google AI Studio HTTP 400 `Proto field is not repeating, cannot start list` error caused by nested tool schemas containing array types (e.g. `type: ["object", "null"]`), `$defs`, and `$ref` references (e.g. from MCP tools like Notion).
+  - Implemented `_sanitize_schema_for_gemini`: recursively inlines `$ref` from `$defs`/`definitions`, simplifies `anyOf`/`oneOf`/`allOf`, converts array types to single scalar strings with `nullable: true`, enforces mandatory `items` for array types, and strips unsupported metadata fields.
+  - Implemented tool name normalization mapping non-alphanumeric characters (e.g. `API-post-search` -> `API_post_search`) with bidirectional translation on emitted function calls.
+  - Added model aliasing mapping deprecated model names (`gemini-2.0-flash`, `gemini-2.5-flash`) to active endpoints (`gemini-3.6-flash`).
 
 ## Planned Future Roadmap Tasks (Notion Tracked)
 - **Task 1: Live Token Usage & Budget Warning Tracker Widget**: Add live token/cost meter in top header bar showing expenditure ($) per session/model with dynamic OpenRouter pricing catalog sync, multi-tier protection (75% Soft Alert, 90% Auto-Downgrade, 100% Hard Cap), sub-agent cost attribution tagging, atomic Redis sync, and an analytics drawer with spending graphs.

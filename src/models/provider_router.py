@@ -629,11 +629,23 @@ class ProviderRouter:
     ) -> Dict[str, Any]:
         """Direct HTTP call to Google AI Studio Gemini REST API.
         Supports vision/image_url content blocks AND native function calling.
-        Translates OpenAI tool schema/history ↔ Gemini functionDeclarations/functionCall/functionResponse.
+        Translates OpenAI tool schema/history <-> Gemini functionDeclarations/functionCall/functionResponse.
         """
         import base64 as _b64
+        import re
         from src.models.openrouter_client import extract_text_content
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key.strip()}"
+
+        # Auto-map deprecated/migrated model identifiers to active Google models
+        model_aliases = {
+            "gemini-2.0-flash": "gemini-3.6-flash",
+            "gemini-2.0-flash-lite": "gemini-3.5-flash-lite",
+            "gemini-2.5-flash": "gemini-3.6-flash",
+            "gemini-1.5-flash": "gemini-3.5-flash-lite",
+            "gemini-1.5-pro": "gemini-2.5-pro",
+        }
+        resolved_model = model_aliases.get(model_name.strip(), model_name.strip())
+
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{resolved_model}:generateContent?key={api_key.strip()}"
 
         system_instruction_parts = []
         contents = []
@@ -671,41 +683,154 @@ class ProviderRouter:
                 return parts if parts else [{"text": ""}]
             return [{"text": str(content)}]
 
-        def _normalize_gemini_schema(schema: Any) -> None:
-            """Recursively uppercase all JSON Schema 'type' values for Gemini compliance."""
+        def _sanitize_schema_for_gemini(schema: Any, root_defs: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+            """Convert any JSON Schema (including MCP schemas with $ref, anyOf, oneOf, type lists)
+            into a valid Google Gemini Schema protobuf payload.
+            """
             if not isinstance(schema, dict):
-                return
-            if "type" in schema and isinstance(schema["type"], str):
-                schema["type"] = schema["type"].upper()
-            for key in ("properties", "items"):
-                child = schema.get(key)
-                if isinstance(child, dict):
-                    if key == "properties":
-                        for v in child.values():
-                            _normalize_gemini_schema(v)
-                    else:
-                        _normalize_gemini_schema(child)
+                return {"type": "STRING"}
 
-        # ── 1. Translate OpenAI tools → Gemini functionDeclarations ──────────
+            # Extract definitions if at root
+            if root_defs is None:
+                root_defs = {}
+                for def_key in ("$defs", "definitions"):
+                    if def_key in schema and isinstance(schema[def_key], dict):
+                        root_defs.update(schema[def_key])
+
+            # Resolve $ref if present
+            if "$ref" in schema and isinstance(schema["$ref"], str):
+                ref_path = schema["$ref"]
+                ref_name = ref_path.split("/")[-1]
+                if ref_name in root_defs:
+                    resolved = json.loads(json.dumps(root_defs[ref_name]))
+                    return _sanitize_schema_for_gemini(resolved, root_defs)
+
+            # Flatten composite schemas: anyOf / oneOf / allOf
+            for composite_key in ("anyOf", "oneOf", "allOf"):
+                if composite_key in schema and isinstance(schema[composite_key], list):
+                    choices = [c for c in schema[composite_key] if isinstance(c, dict)]
+                    if choices:
+                        is_nullable = any(
+                            c.get("type") == "null" or (isinstance(c.get("type"), list) and "null" in c.get("type"))
+                            for c in choices
+                        )
+                        non_null_choices = [c for c in choices if c.get("type") != "null"]
+                        target_choice = non_null_choices[0] if non_null_choices else choices[0]
+                        merged = json.loads(json.dumps(target_choice))
+                        if is_nullable:
+                            merged["nullable"] = True
+                        if "description" in schema and "description" not in merged:
+                            merged["description"] = schema["description"]
+                        return _sanitize_schema_for_gemini(merged, root_defs)
+
+            # Extract raw type
+            raw_type = schema.get("type")
+            is_nullable = bool(schema.get("nullable", False))
+            normalized_type = None
+
+            if isinstance(raw_type, list):
+                if "null" in raw_type:
+                    is_nullable = True
+                valid_types = [t for t in raw_type if t != "null"]
+                raw_type = valid_types[0] if valid_types else "string"
+
+            if isinstance(raw_type, str):
+                t_upper = raw_type.upper()
+                if t_upper in ("STRING", "INTEGER", "NUMBER", "BOOLEAN", "ARRAY", "OBJECT"):
+                    normalized_type = t_upper
+                elif t_upper == "INT":
+                    normalized_type = "INTEGER"
+                elif t_upper in ("FLOAT", "DOUBLE"):
+                    normalized_type = "NUMBER"
+                elif t_upper == "BOOL":
+                    normalized_type = "BOOLEAN"
+                else:
+                    normalized_type = "STRING"
+            elif "properties" in schema:
+                normalized_type = "OBJECT"
+            elif "items" in schema:
+                normalized_type = "ARRAY"
+            elif "enum" in schema:
+                normalized_type = "STRING"
+            else:
+                normalized_type = "OBJECT" if ("properties" in schema) else "STRING"
+
+            result: Dict[str, Any] = {"type": normalized_type}
+
+            if is_nullable:
+                result["nullable"] = True
+
+            if "description" in schema and isinstance(schema["description"], str):
+                result["description"] = schema["description"]
+
+            if "format" in schema and isinstance(schema["format"], str):
+                result["format"] = schema["format"]
+
+            if "enum" in schema and isinstance(schema["enum"], list):
+                result["enum"] = [str(e) for e in schema["enum"]]
+            elif "const" in schema:
+                result["enum"] = [str(schema["const"])]
+
+            # Handle object properties
+            if normalized_type == "OBJECT" or "properties" in schema:
+                result["type"] = "OBJECT"
+                props = schema.get("properties")
+                if isinstance(props, dict):
+                    clean_props = {}
+                    for pk, pv in props.items():
+                        clean_props[pk] = _sanitize_schema_for_gemini(pv, root_defs)
+                    result["properties"] = clean_props
+                
+                # Handle required properties
+                req = schema.get("required")
+                if isinstance(req, list) and req:
+                    clean_req = [str(r) for r in req if isinstance(r, str) and (r in result.get("properties", {}))]
+                    if clean_req:
+                        result["required"] = clean_req
+
+            # Handle array items
+            elif normalized_type == "ARRAY":
+                items = schema.get("items")
+                if isinstance(items, dict):
+                    result["items"] = _sanitize_schema_for_gemini(items, root_defs)
+                elif isinstance(items, list) and items:
+                    result["items"] = _sanitize_schema_for_gemini(items[0], root_defs)
+                else:
+                    result["items"] = {"type": "STRING"}
+
+            return result
+
+        # ── 1. Translate OpenAI tools -> Gemini functionDeclarations ──────────
         gemini_tools = []
+        tool_name_map = {} # sanitized_name -> original_name
+        orig_to_sanitized_map = {} # original_name -> sanitized_name
+
         if tools:
             function_declarations = []
             for t in tools:
                 if t.get("type") == "function":
                     fn = t.get("function", {})
-                    params = json.loads(json.dumps(fn.get("parameters", {})))  # deep copy
-                    _normalize_gemini_schema(params)
-                    # Remove unsupported 'required' field at root (Gemini uses per-property 'required')
-                    params.pop("required", None)
+                    orig_name = fn.get("name", "")
+                    # Gemini requires tool name to match ^[a-zA-Z0-9_]+$ (max 64 chars)
+                    sanitized_name = re.sub(r'[^a-zA-Z0-9_]', '_', orig_name)
+                    if not sanitized_name:
+                        sanitized_name = f"tool_{len(function_declarations)}"
+                    tool_name_map[sanitized_name] = orig_name
+                    orig_to_sanitized_map[orig_name] = sanitized_name
+
+                    raw_params = fn.get("parameters", {})
+                    params = _sanitize_schema_for_gemini(json.loads(json.dumps(raw_params)))
+                    params.pop("required", None) # Root required not permitted at top-level parameters
+
                     function_declarations.append({
-                        "name": fn.get("name"),
+                        "name": sanitized_name,
                         "description": fn.get("description", ""),
                         "parameters": params
                     })
             if function_declarations:
                 gemini_tools.append({"functionDeclarations": function_declarations})
 
-        # ── 2. Translate OpenAI-style message history → Gemini contents ──────
+        # ── 2. Translate OpenAI-style message history -> Gemini contents ──────
         for m in messages:
             role = m.get("role", "user")
             raw_content = m.get("content")
@@ -716,8 +841,9 @@ class ProviderRouter:
                     system_instruction_parts.append({"text": txt})
 
             elif role == "tool":
-                # Tool execution result → Gemini 'function' role with functionResponse
-                name = m.get("name", "tool")
+                # Tool execution result -> Gemini 'function' role with functionResponse
+                orig_tool_name = m.get("name", "tool")
+                sanitized_tool_name = orig_to_sanitized_map.get(orig_tool_name, orig_tool_name)
                 try:
                     resp_data = json.loads(raw_content) if isinstance(raw_content, str) else raw_content
                     if not isinstance(resp_data, dict):
@@ -726,7 +852,7 @@ class ProviderRouter:
                     resp_data = {"output": str(raw_content)}
                 contents.append({
                     "role": "function",
-                    "parts": [{"functionResponse": {"name": name, "response": resp_data}}]
+                    "parts": [{"functionResponse": {"name": sanitized_tool_name, "response": resp_data}}]
                 })
 
             else:
@@ -738,11 +864,12 @@ class ProviderRouter:
                 if role in ("assistant", "model") and m.get("tool_calls"):
                     for tc in m["tool_calls"]:
                         fn_name = tc.get("function", {}).get("name", "")
+                        sanitized_fn_name = orig_to_sanitized_map.get(fn_name, fn_name)
                         try:
                             args = json.loads(tc.get("function", {}).get("arguments", "{}"))
                         except Exception:
                             args = {}
-                        parts.append({"functionCall": {"name": fn_name, "args": args}})
+                        parts.append({"functionCall": {"name": sanitized_fn_name, "args": args}})
 
                 # Merge consecutive same-role turns (Gemini rejects duplicate adjacent roles)
                 if contents and contents[-1]["role"] == g_role:
@@ -780,18 +907,20 @@ class ProviderRouter:
                 p.get("text", "") for p in resp_parts if p.get("text")
             ).strip()
 
-            # ── 5. Parse functionCall → OpenAI-style tool_calls ───────────────
+            # ── 5. Parse functionCall -> OpenAI-style tool_calls ───────────────
             tool_calls_out = None
             fc_parts = [p for p in resp_parts if "functionCall" in p]
             if fc_parts:
                 tool_calls_out = []
                 for i, p in enumerate(fc_parts):
                     fc = p["functionCall"]
+                    sanitized_fn = fc.get("name", "")
+                    orig_fn = tool_name_map.get(sanitized_fn, sanitized_fn)
                     tool_calls_out.append({
                         "id": f"call_gemini_{i}",
                         "type": "function",
                         "function": {
-                            "name": fc.get("name", ""),
+                            "name": orig_fn,
                             "arguments": json.dumps(fc.get("args", {}))
                         }
                     })
@@ -800,17 +929,17 @@ class ProviderRouter:
             return {
                 "content": content_text,
                 "tool_calls": tool_calls_out,
-                "model_id": f"google/{model_name}",
+                "model_id": f"google/{resolved_model}",
                 "tokens_used": tokens,
                 "success": True
             }
         except urllib.error.HTTPError as http_err:
             err_body = http_err.read().decode("utf-8") if http_err.fp else str(http_err)
             logger.error(f"Google Direct API HTTP {http_err.code}: {err_body}")
-            return {"success": False, "error": f"Google AI Studio HTTP {http_err.code}: {err_body}", "model_id": f"google/{model_name}"}
+            return {"success": False, "error": f"Google AI Studio HTTP {http_err.code}: {err_body}", "model_id": f"google/{resolved_model}"}
         except Exception as e:
             logger.error(f"Google Direct API error: {e}")
-            return {"success": False, "error": str(e), "model_id": f"google/{model_name}"}
+            return {"success": False, "error": str(e), "model_id": f"google/{resolved_model}"}
 
     async def _generate_anthropic_direct(
         self,
