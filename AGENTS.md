@@ -325,7 +325,11 @@ data/
   - Fixed Google AI Studio HTTP 400 `Proto field is not repeating, cannot start list` error caused by nested tool schemas containing array types (e.g. `type: ["object", "null"]`), `$defs`, and `$ref` references (e.g. from MCP tools like Notion).
   - Implemented `_sanitize_schema_for_gemini`: recursively inlines `$ref` from `$defs`/`definitions`, simplifies `anyOf`/`oneOf`/`allOf`, converts array types to single scalar strings with `nullable: true`, enforces mandatory `items` for array types, and strips unsupported metadata fields.
   - Implemented tool name normalization mapping non-alphanumeric characters (e.g. `API-post-search` -> `API_post_search`) with bidirectional translation on emitted function calls.
-  - Added model aliasing mapping deprecated model names (`gemini-2.0-flash`, `gemini-2.5-flash`) to active endpoints (`gemini-3.6-flash`).
+- **Expanded S3 SRE Knowledge Base & Vector Index (`scripts/seed_s3_runbooks.py`)**:
+  - Expanded Amazon S3 knowledge base bucket `cockroachsre-knowledge-base` to 12 total objects (8 core SRE runbooks + 4 historical incident logs).
+  - Added runbooks: `transaction-contention-locks.md` (40001 retry handling & row lock ordering), `cross-region-latency-spikes.md` (table locality & REGIONAL BY ROW topology), `schema-migration-failures.md` (online DDL backfills & job management).
+  - Added historical incident postmortems: `INC-2026-003` (flash sale inventory lock contention) and `INC-2026-004` (cross-region locality misconfiguration).
+  - Synchronized and indexed all 12 objects into CockroachDB pgvector store.
 
 ## Planned Future Roadmap Tasks (Notion Tracked)
 - **Task 1: Live Token Usage & Budget Warning Tracker Widget**: Add live token/cost meter in top header bar showing expenditure ($) per session/model with dynamic OpenRouter pricing catalog sync, multi-tier protection (75% Soft Alert, 90% Auto-Downgrade, 100% Hard Cap), sub-agent cost attribution tagging, atomic Redis sync, and an analytics drawer with spending graphs.
