@@ -443,12 +443,12 @@ class EmbeddedBackend:
             val = k.get("key_value", "")
             masked = f"{val[:6]}...{val[-4:]}" if len(val) > 10 else "••••••••"
             safe_keys.append({
-                "id": k.get("id"),
+                "id": str(k.get("id")) if k.get("id") else None,
                 "provider": k.get("provider"),
                 "label": k.get("label"),
                 "masked_value": masked,
                 "is_active": k.get("is_active"),
-                "added_at": k.get("added_at")
+                "added_at": str(k.get("added_at")) if k.get("added_at") is not None else None,
             })
         return {
             "jsonrpc": "2.0",
@@ -828,7 +828,7 @@ async def main_async():
             request = json.loads(line)
             # Await the processing so responses remain somewhat ordered
             response = await backend.process_request(request)
-            print(json.dumps(response), file=original_stdout, flush=True)
+            print(json.dumps(response, default=str), file=original_stdout, flush=True)
         except json.JSONDecodeError:
             error_response = {
                 "jsonrpc": "2.0",

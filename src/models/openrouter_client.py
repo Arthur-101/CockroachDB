@@ -49,7 +49,255 @@ class Message(BaseModel):
     name: Optional[str] = Field(default=None, description="Name of the tool for tool responses")
 
 
+import json
+import logging
+import re
+
+logger = logging.getLogger(__name__)
+
+
+class Usage(BaseModel):
+    """Usage info."""
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+
+
+class ChatChoice(BaseModel):
+    """Chat choice."""
+    message: Dict[str, Any] = Field(default_factory=dict)
+    finish_reason: Optional[str] = None
+
+
+class ChatResponse(BaseModel):
+    """Chat completion response wrapper."""
+    id: Optional[str] = None
+    model: Optional[str] = None
+    choices: List[Dict[str, Any]] = Field(default_factory=list)
+    usage: Optional[Usage] = None
+    error: Optional[Dict[str, Any]] = None
+
+
 class OpenRouterClient:
-    """Dummy fallback class to satisfy legacy imports."""
-    def __init__(self):
-        pass
+    """Client that routes model requests through ProviderRouter and provides extraction helpers."""
+
+    def __init__(self, memory_store=None):
+        self.memory_store = memory_store
+        self._provider_router = None
+
+    @property
+    def provider_router(self):
+        if self._provider_router is None:
+            from src.models.provider_router import ProviderRouter
+            self._provider_router = ProviderRouter(memory_store=self.memory_store)
+        return self._provider_router
+
+    def _heuristic_tags(self, content: str) -> List[str]:
+        """Extract tags using simple heuristics."""
+        stop_words = {
+            "the", "a", "an", "and", "or", "but", "in", "on", "at", "to",
+            "for", "of", "with", "by", "is", "are", "was", "were", "be",
+            "been", "being", "have", "has", "had", "do", "does", "did",
+            "can", "could", "should", "would", "will", "this", "that",
+            "what", "how", "when", "where", "which", "who", "why"
+        }
+        words = re.findall(r"\b[a-zA-Z]{3,}\b", content.lower())
+        word_counts: Dict[str, int] = {}
+        for word in words:
+            if word not in stop_words:
+                word_counts[word] = word_counts.get(word, 0) + 1
+        tags = sorted(word_counts.items(), key=lambda x: x[1], reverse=True)[:5]
+        return [tag[0] for tag in tags]
+
+    async def extract_tags(
+        self,
+        content: str,
+        model_id: Optional[str] = None,
+        use_heuristic: bool = True,
+    ) -> List[str]:
+        """Extract tags from content using LLM or heuristic."""
+        if model_id and not use_heuristic:
+            try:
+                dict_msgs = [
+                    {
+                        "role": "system",
+                        "content": "Extract 3-5 key topic tags from the content. Return only comma-separated tags, no explanations or punctuation.",
+                    },
+                    {"role": "user", "content": f"Extract tags from:\n\n{content}"},
+                ]
+                res = await self.provider_router.generate(
+                    dict_msgs, model_id=model_id, temperature=0.1, max_tokens=100
+                )
+                if isinstance(res, dict) and res.get("content"):
+                    raw_tags = res["content"].strip()
+                    tags = [t.strip().lstrip("#") for t in raw_tags.split(",") if t.strip()]
+                    if tags:
+                        return tags[:5]
+            except Exception as e:
+                logger.debug(f"LLM tag extraction fallback: {e}")
+
+        # Always fallback to heuristic
+        return self._heuristic_tags(content)
+
+    async def summarize_content(
+        self,
+        content: str,
+        max_tokens: int = 400,
+        model_id: str = "google:gemini-2.0-flash",
+    ) -> str:
+        """Summarize text content to a concise summary."""
+        try:
+            dict_msgs = [
+                {
+                    "role": "system",
+                    "content": "Summarize the given conversation turn concisely in 2-3 sentences. Focus on problems identified, key actions taken, and current status.",
+                },
+                {"role": "user", "content": f"Content to summarize:\n\n{content}"},
+            ]
+            res = await self.provider_router.generate(
+                dict_msgs, model_id=model_id, temperature=0.2, max_tokens=max_tokens
+            )
+            if isinstance(res, dict) and res.get("content"):
+                return res["content"].strip()
+        except Exception as e:
+            logger.error(f"Error summarizing content: {e}")
+        return content[:max_tokens]
+
+    async def extract_memory_facts(
+        self,
+        content: str,
+        model_id: str = "google:gemini-2.0-flash",
+    ) -> List[str]:
+        """Extract enduring personal facts, user preferences, and system specs."""
+        try:
+            dict_msgs = [
+                {
+                    "role": "system",
+                    "content": (
+                        "You are an AI Memory Extraction Specialist.\n"
+                        "Extract ONLY permanent personal facts, preferences, environment specs, or credentials.\n"
+                        "Rules:\n"
+                        "1. IGNORE transient chat updates, commands executed, temporary bug reports.\n"
+                        "2. ONLY extract enduring facts (e.g., 'User prefers dark mode', 'S3 bucket is cockroachsre-knowledge-base').\n"
+                        "3. If no permanent facts are mentioned, return ONLY 'NO_FACTS'.\n"
+                        "4. Output extracted facts as bullet points starting with '- '."
+                    ),
+                },
+                {"role": "user", "content": f"Text to evaluate:\n\n{content}"},
+            ]
+            res = await self.provider_router.generate(
+                dict_msgs, model_id=model_id, temperature=0.1, max_tokens=300
+            )
+            content_result = res.get("content", "").strip() if isinstance(res, dict) else ""
+            if not content_result or "NO_FACTS" in content_result:
+                return []
+
+            facts = []
+            for line in content_result.split("\n"):
+                line = line.strip()
+                if line.startswith("-") or line.startswith("*"):
+                    facts.append(line.lstrip("-* "))
+                elif line and not line.lower().startswith("here"):
+                    facts.append(line)
+            return facts
+        except Exception as e:
+            logger.debug(f"Memory extraction notice: {e}")
+            return []
+
+    async def consolidate_memory_actions(
+        self,
+        existing_memories: List[Dict[str, Any]],
+        new_facts: List[str],
+        model_id: str = "google:gemini-2.0-flash",
+    ) -> List[Dict[str, Any]]:
+        """Compare new facts against existing memories to decide whether to ADD, UPDATE, or SKIP."""
+        if not new_facts:
+            return []
+        if not existing_memories:
+            return [{"action": "add", "content": fact} for fact in new_facts]
+
+        try:
+            memories_formatted = json.dumps(
+                [{"id": m["id"], "content": m["content"]} for m in existing_memories]
+            )
+            facts_formatted = json.dumps(new_facts)
+            dict_msgs = [
+                {
+                    "role": "system",
+                    "content": (
+                        "You are an AI Memory Consolidation Engine.\n"
+                        "Compare NEW_FACTS against EXISTING_MEMORIES.\n"
+                        "For each new fact, output a JSON list of objects with:\n"
+                        "- {\"action\": \"update\", \"memory_id\": \"<existing_id>\", \"content\": \"<new_updated_fact>\"}\n"
+                        "- {\"action\": \"skip\"} if already recorded\n"
+                        "- {\"action\": \"add\", \"content\": \"<fact>\"} if completely new\n"
+                        "Output ONLY a valid JSON list of action objects."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": f"EXISTING_MEMORIES:\n{memories_formatted}\n\nNEW_FACTS:\n{facts_formatted}",
+                },
+            ]
+            res = await self.provider_router.generate(
+                dict_msgs, model_id=model_id, temperature=0.1, max_tokens=500
+            )
+            raw_json = res.get("content", "").strip() if isinstance(res, dict) else ""
+            if raw_json:
+                if "```" in raw_json:
+                    parts = raw_json.split("```")
+                    raw_json = parts[1]
+                    if raw_json.startswith("json"):
+                        raw_json = raw_json[4:]
+                raw_json = raw_json.strip()
+                return json.loads(raw_json)
+        except Exception as e:
+            logger.debug(f"Memory consolidation fallback: {e}")
+
+        return [{"action": "add", "content": fact} for fact in new_facts]
+
+    async def chat_completion(
+        self,
+        messages: List[Any],
+        model_type: Optional[str] = None,
+        model_id: Optional[str] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        **kwargs,
+    ) -> ChatResponse:
+        """Fallback chat completion delegating to ProviderRouter."""
+        effective_model = model_id or (model_type if isinstance(model_type, str) else "google:gemini-2.0-flash")
+        dict_msgs = []
+        for m in messages:
+            if isinstance(m, dict):
+                dict_msgs.append(m)
+            elif hasattr(m, "role") and hasattr(m, "content"):
+                dict_msgs.append({"role": m.role, "content": extract_text_content(m.content)})
+
+        res = await self.provider_router.generate(
+            dict_msgs,
+            model_id=effective_model,
+            tools=tools,
+            **kwargs,
+        )
+
+        content = res.get("content", "")
+        tool_calls = res.get("tool_calls")
+        tokens_used = res.get("tokens_used", 0)
+        error = res.get("error")
+
+        return ChatResponse(
+            id=res.get("id"),
+            model=res.get("model_id") or effective_model,
+            choices=[
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": content,
+                        "tool_calls": tool_calls,
+                    },
+                    "finish_reason": "stop",
+                }
+            ],
+            usage=Usage(total_tokens=tokens_used),
+            error={"message": error} if error else None,
+        )

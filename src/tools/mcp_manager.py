@@ -332,37 +332,81 @@ class HttpMcpClient:
         from mcp.client.sse import sse_client
         from mcp import ClientSession
         
+        import os
+        import httpx
+
         # Build headers from both headers & env dicts
         headers = self.headers.copy()
         for k, v in self.env.items():
             headers[k] = str(v)
-            
+
+        # 1. Cluster ID resolution for CockroachDB MCP
         if "mcp-cluster-id" not in headers:
-            import os
-            headers["mcp-cluster-id"] = os.environ.get("COCKROACH_MCP_CLUSTER_ID", "")
-            
-        self.log(f"Opening SSE client connection...")
-        async with sse_client(self.url, headers=headers) as (read_stream, write_stream):
-            async with ClientSession(read_stream, write_stream) as session:
-                await session.initialize()
-                self._session = session
-                
-                mcp_tools = await session.list_tools()
-                tools_list = []
-                for t in mcp_tools.tools:
-                    t_dict = t.model_dump() if hasattr(t, "model_dump") else t.dict()
-                    if "input_schema" in t_dict:
-                        t_dict["inputSchema"] = t_dict.pop("input_schema")
-                    tools_list.append(t_dict)
+            cluster_id = os.environ.get("COCKROACH_MCP_CLUSTER_ID", "")
+            if cluster_id:
+                headers["mcp-cluster-id"] = cluster_id
+
+        # 2. Bearer Authentication resolution (Cockroach Cloud API Key / Service Account token)
+        auth_header = headers.get("Authorization") or headers.get("authorization")
+        if not auth_header:
+            token = (
+                self.env.get("COCKROACH_MCP_API_KEY")
+                or self.env.get("COCKROACH_CLOUD_API_KEY")
+                or self.env.get("COCKROACH_API_KEY")
+                or self.env.get("COCKROACH_MCP_TOKEN")
+                or self.env.get("CCAPI_KEY")
+                or os.environ.get("COCKROACH_MCP_API_KEY")
+                or os.environ.get("COCKROACH_CLOUD_API_KEY")
+                or os.environ.get("COCKROACH_API_KEY")
+                or os.environ.get("COCKROACH_MCP_TOKEN")
+            )
+            if not token:
+                try:
+                    from src.memory.cockroach_store import SQLiteMemoryStore
+                    db = SQLiteMemoryStore()
+                    token = db.get_api_key_by_provider("cockroach") or db.get_api_key_by_provider("cockroachdb")
+                except Exception:
+                    pass
+
+            if token:
+                token_str = str(token).strip()
+                headers["Authorization"] = token_str if token_str.lower().startswith("bearer ") else f"Bearer {token_str}"
+
+        self.log(f"Opening SSE client connection to {self.url}...")
+        try:
+            async with sse_client(self.url, headers=headers) as (read_stream, write_stream):
+                async with ClientSession(read_stream, write_stream) as session:
+                    await session.initialize()
+                    self._session = session
                     
-                self.tools = tools_list
-                self.status = "Active"
-                self.error_message = ""
-                self.log(f"Connected to remote MCP server. Exposing {len(self.tools)} tools.")
-                
-                # Keep loop alive until self._running is set to False
-                while self._running:
-                    await asyncio.sleep(0.5)
+                    mcp_tools = await session.list_tools()
+                    tools_list = []
+                    for t in mcp_tools.tools:
+                        t_dict = t.model_dump() if hasattr(t, "model_dump") else t.dict()
+                        if "input_schema" in t_dict:
+                            t_dict["inputSchema"] = t_dict.pop("input_schema")
+                        tools_list.append(t_dict)
+                        
+                    self.tools = tools_list
+                    self.status = "Active"
+                    self.error_message = ""
+                    self.log(f"Connected to remote MCP server. Exposing {len(self.tools)} tools.")
+                    
+                    # Keep loop alive until self._running is set to False
+                    while self._running:
+                        await asyncio.sleep(0.5)
+        except Exception as e:
+            err_str = str(e)
+            if "401" in err_str or "Unauthorized" in err_str:
+                self.error_message = (
+                    "401 Unauthorized: CockroachDB Cloud MCP requires a Cockroach Cloud API key. "
+                    "Generate one in Cockroach Cloud Console -> Access Management -> Service Accounts/API Keys, "
+                    "then add 'COCKROACH_MCP_API_KEY=...' to .env or 'Authorization: Bearer <key>' in the MCP configuration."
+                )
+            else:
+                self.error_message = err_str
+            self.status = "Error"
+            self.log(f"SSE connection failed: {self.error_message}")
 
     def call_tool(self, name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         if not self._running or not self._session:
