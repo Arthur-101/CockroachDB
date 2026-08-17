@@ -329,11 +329,11 @@ data/
   - Reordered Settings modal tabs to prioritize operations: **1st Tab: SRE Console**, **2nd Tab: MCP Servers**, **3rd Tab: Models & API Keys**, **4th Tab: Memories & Persona**.
   - Added dedicated **"Sync from AWS S3"** action button in the SRE Console header with live spinner, invoking `s3_sync_to_cockroachdb` via Tauri IPC and refreshing incident/runbook/fix tables.
   - Configured automatic SRE data preloading in `initializeBackend` on app startup so all active incidents, playbooks, and resolution histories are immediately rendered with zero lag.
-- **EmbeddedBackend S3 Handlers Scope & Gemini Tool Calling Fix (`src/api/embedded_backend.py`, `src/models/provider_router.py`, `src/memory/cockroach_store.py`)**:
-  - Moved all S3 async JSON-RPC handler methods (`_handle_s3_test_connection`, `_handle_s3_list_all`, `_handle_s3_upload_runbook`, `_handle_s3_fetch_runbook`, `_handle_s3_sync_to_cockroachdb`, `_handle_s3_upload_incident`) inside the `EmbeddedBackend` class body, resolving `'EmbeddedBackend' object has no attribute '_handle_s3_sync_to_cockroachdb'`.
-  - Fixed Google AI Studio HTTP 400 `Role 'function' is not supported` by formatting tool execution results as `role: "user"` containing `functionResponse` parts as required by Gemini REST API.
-  - Implemented `thoughtSignature` extraction and replay across multi-turn tool calling, allowing Gemini 3.6/3.7 to execute tools and return final responses without schema validation errors.
-  - Added case-insensitive matching (`LOWER(service_name) = LOWER(%s)`) in CockroachDB store queries.
+- **Atomic Clean Wipe-and-Replace Vector Lifecycle (`src/memory/vector_store.py`)**:
+  - Upgraded `VectorMemoryStore.add_document()` to use atomic transaction scoped replacement (`DELETE FROM documents WHERE source = %s` followed by fresh chunk `INSERT`s) eliminating stale "ghost chunks" when documents are shortened or modified.
+  - Added `delete_document(file_path)` to remove all chunks for a specific document/S3 key.
+  - Added `clear_all_documents()` for full knowledge base vector purges and resets.
+  - Added `get_indexed_documents_stats()` reporting total indexed documents, total 384-dimensional chunks, and per-document chunk counts. Verified with test suite.
 
 ## Planned Future Roadmap Tasks (Notion Tracked)
 - **Task 1: Live Token Usage & Budget Warning Tracker Widget**: Add live token/cost meter in top header bar showing expenditure ($) per session/model with dynamic OpenRouter pricing catalog sync, multi-tier protection (75% Soft Alert, 90% Auto-Downgrade, 100% Hard Cap), sub-agent cost attribution tagging, atomic Redis sync, and an analytics drawer with spending graphs.
