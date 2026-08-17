@@ -262,7 +262,11 @@ class VectorMemoryStore:
         chunk_size: int = 1000,
         chunk_overlap: int = 200,
     ):
-        """Chunk a document, generate embeddings, and insert/upsert into documents table."""
+        """
+        Chunk a document, generate embeddings, and atomically replace all existing chunks
+        for this specific document in the documents table (clean wipe-and-replace).
+        Guarantees zero ghost chunks and zero query downtime.
+        """
         if not content:
             return
 
@@ -283,28 +287,109 @@ class VectorMemoryStore:
         logger.info(f"Chunked document '{file_path}' into {len(chunks)} parts. Generating embeddings...")
 
         try:
+            # Pre-compute all embeddings locally
+            prepared_chunks = []
             for i, chunk in enumerate(chunks):
                 doc_id = f"{file_path}_{i}"
                 embedding = self.model.encode(chunk)
                 vec_str = self._format_vector(embedding)
                 meta_json = json.dumps({"file_path": file_path, "chunk": i})
+                prepared_chunks.append((doc_id, chunk, file_path, meta_json, vec_str))
 
-                # Inline UPSERT using CockroachDB's ON CONFLICT syntax
-                self._execute(
+            # Atomic transaction: delete old chunks for this document then insert clean chunks
+            cur = self._cursor()
+            cur.execute("DELETE FROM documents WHERE source = %s", (file_path,))
+            
+            for doc_id, chunk, source_path, meta_json, vec_str in prepared_chunks:
+                cur.execute(
                     """
                     INSERT INTO documents (id, content, source, metadata, embedding)
                     VALUES (%s, %s, %s, %s, %s)
-                    ON CONFLICT (id) DO UPDATE SET
-                        content   = EXCLUDED.content,
-                        source    = EXCLUDED.source,
-                        metadata  = EXCLUDED.metadata,
-                        embedding = EXCLUDED.embedding
                     """,
-                    (doc_id, chunk, file_path, meta_json, vec_str),
+                    (doc_id, chunk, source_path, meta_json, vec_str),
                 )
-            logger.info(f"Successfully upserted {len(chunks)} vector segments for '{file_path}'.")
+            
+            if self._conn:
+                self._conn.commit()
+
+            logger.info(f"Cleanly replaced {len(chunks)} vector segments for '{file_path}'.")
         except Exception as e:
-            logger.error(f"Error adding document chunks to vector store: {e}")
+            if self._conn:
+                try:
+                    self._conn.rollback()
+                except Exception:
+                    pass
+            logger.error(f"Error cleanly replacing document chunks in vector store: {e}")
+
+    def delete_document(self, file_path: str) -> int:
+        """
+        Delete all vector chunks for a specific document path or S3 key.
+        Returns the number of deleted chunks.
+        """
+        try:
+            cur = self._cursor()
+            cur.execute("DELETE FROM documents WHERE source = %s", (file_path,))
+            deleted_count = cur.rowcount
+            if self._conn:
+                self._conn.commit()
+            logger.info(f"Deleted {deleted_count} vector chunks for '{file_path}'.")
+            return deleted_count
+        except Exception as e:
+            if self._conn:
+                try:
+                    self._conn.rollback()
+                except Exception:
+                    pass
+            logger.error(f"Error deleting document '{file_path}' from vector store: {e}")
+            return 0
+
+    def clear_all_documents(self) -> int:
+        """
+        Wipe all document vector chunks from CockroachDB.
+        Useful for a full knowledge base re-indexing or purge.
+        Returns the number of deleted chunks.
+        """
+        try:
+            cur = self._cursor()
+            cur.execute("DELETE FROM documents")
+            deleted_count = cur.rowcount
+            if self._conn:
+                self._conn.commit()
+            logger.info(f"Cleared all {deleted_count} document vector chunks from CockroachDB.")
+            return deleted_count
+        except Exception as e:
+            if self._conn:
+                try:
+                    self._conn.rollback()
+                except Exception:
+                    pass
+            logger.error(f"Error clearing document store: {e}")
+            return 0
+
+    def get_indexed_documents_stats(self) -> Dict[str, Any]:
+        """
+        Retrieve statistics about indexed documents in CockroachDB.
+        """
+        try:
+            cur = self._cursor()
+            cur.execute(
+                """
+                SELECT source, COUNT(*) AS chunk_count
+                FROM documents
+                GROUP BY source
+                ORDER BY chunk_count DESC
+                """
+            )
+            rows = cur.fetchall()
+            total_chunks = sum(r["chunk_count"] for r in rows)
+            return {
+                "total_documents": len(rows),
+                "total_chunks": total_chunks,
+                "documents": [{"source": r["source"], "chunks": r["chunk_count"]} for r in rows],
+            }
+        except Exception as e:
+            logger.error(f"Error getting document store stats: {e}")
+            return {"total_documents": 0, "total_chunks": 0, "documents": []}
 
     def search_documents(self, query: str, limit: int = 3) -> List[Dict[str, Any]]:
         """Search across all indexed document vector chunks using cosine distance (<=>)."""
