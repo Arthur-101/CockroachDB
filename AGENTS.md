@@ -329,6 +329,9 @@ data/
   - Reordered Settings modal tabs to prioritize operations: **1st Tab: SRE Console**, **2nd Tab: MCP Servers**, **3rd Tab: Models & API Keys**, **4th Tab: Memories & Persona**.
   - Added dedicated **"Sync from AWS S3"** action button in the SRE Console header with live spinner, invoking `s3_sync_to_cockroachdb` via Tauri IPC and refreshing incident/runbook/fix tables.
   - Configured automatic SRE data preloading in `initializeBackend` on app startup so all active incidents, playbooks, and resolution histories are immediately rendered with zero lag.
+- **Datetime JSON Serialization & S3 Dual-Index Fix (`src/controller/chat_router.py`, `src/memory/cockroach_store.py`, `src/tools/s3_tools.py`)**:
+  - Fixed `TypeError: Object of type datetime is not JSON serializable` by applying `default=str` across all `json.dumps()` in `chat_router.py` and converting `created_at`, `updated_at`, `resolved_at`, `added_at` to standard ISO strings across `CockroachMemoryStore` query methods (`get_runbooks`, `get_incidents`, `get_fix_history`, `get_messages`, `get_all_sessions`, `get_all_user_memories`, `get_api_keys`).
+  - Enhanced `s3_kb.sync_to_vector_store()` to dual-sync: indexes into CockroachDB `pgvector` for semantic search AND populates relational `runbooks` / `incidents` tables so the SRE Console UI reflects S3 content immediately upon sync.
 
 ## Planned Future Roadmap Tasks (Notion Tracked)
 - **Task 1: Live Token Usage & Budget Warning Tracker Widget**: Add live token/cost meter in top header bar showing expenditure ($) per session/model with dynamic OpenRouter pricing catalog sync, multi-tier protection (75% Soft Alert, 90% Auto-Downgrade, 100% Hard Cap), sub-agent cost attribution tagging, atomic Redis sync, and an analytics drawer with spending graphs.
