@@ -48,11 +48,27 @@ class EmbeddedBackend:
         
         # Run uvicorn server in a background thread so it shares memory and singletons
         import threading
+        import socket
         import uvicorn
         from src.api.chat_server import app
-        
+
+        def _find_free_port(preferred: int) -> int:
+            """Return preferred port if free, otherwise let OS pick one."""
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.bind(("127.0.0.1", preferred))
+                return preferred
+            except OSError:
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.bind(("127.0.0.1", 0))
+                    return s.getsockname()[1]
+
         def run_uvicorn():
-            port = int(os.getenv("AGENTICAI_API_PORT", "8000"))
+            preferred = int(os.getenv("AGENTICAI_API_PORT", "8000"))
+            port = _find_free_port(preferred)
+            if port != preferred:
+                print(f"INFO: Port {preferred} in use — chat server binding to {port}", file=sys.stderr)
+            os.environ["AGENTICAI_API_PORT"] = str(port)   # publish to rest of process
             uvicorn.run(app, host="127.0.0.1", port=port, log_level="error", access_log=False)
             
         self.chat_server_thread = threading.Thread(target=run_uvicorn, daemon=True)

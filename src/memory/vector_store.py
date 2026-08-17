@@ -16,6 +16,22 @@ from sentence_transformers import SentenceTransformer
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Module-level singleton for the embedding model.
+# Loaded ONCE per Python process — all VectorMemoryStore instances share it.
+# This eliminates the repeated "Loading weights" messages on startup.
+# ---------------------------------------------------------------------------
+_EMBEDDING_MODEL: Optional[Any] = None
+
+def _get_embedding_model():
+    """Return the shared SentenceTransformer instance, loading it if needed."""
+    global _EMBEDDING_MODEL
+    if _EMBEDDING_MODEL is None:
+        logger.info("Loading SentenceTransformer('all-MiniLM-L6-v2') — first time only...")
+        _EMBEDDING_MODEL = SentenceTransformer("all-MiniLM-L6-v2")
+        logger.info("SentenceTransformer model loaded and cached for process lifetime.")
+    return _EMBEDDING_MODEL
+
 
 # ---------------------------------------------------------------------------
 # Helper: build connection (shares same URL as cockroach_store)
@@ -36,14 +52,8 @@ class VectorMemoryStore:
     """CockroachDB-pgvector memory store. Drop-in replacement for ChromaDB."""
 
     def __init__(self, persist_directory: Optional[str] = None):
-        """Initialize the local embedding model and DB connection."""
-        logger.info("Initializing SentenceTransformer('all-MiniLM-L6-v2')...")
-        try:
-            self.model = SentenceTransformer("all-MiniLM-L6-v2")
-            logger.info("SentenceTransformer model loaded successfully.")
-        except Exception as e:
-            logger.error(f"Failed to load sentence-transformers model: {e}")
-            raise
+        """Initialize — reuses the shared embedding model singleton."""
+        self.model = _get_embedding_model()
 
         self._conn: Optional[psycopg2.extensions.connection] = None
         self._ensure_connected()
