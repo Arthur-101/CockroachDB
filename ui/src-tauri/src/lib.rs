@@ -669,6 +669,21 @@ async fn get_fix_history(
     Ok(result)
 }
 
+#[tauri::command]
+async fn s3_sync_to_cockroachdb(
+    app_handle: tauri::AppHandle,
+    prefix: Option<String>,
+    limit: Option<i64>
+) -> Result<serde_json::Value, String> {
+    let params = json!({
+        "prefix": prefix.unwrap_or_default(),
+        "limit": limit.unwrap_or(50),
+        "request_id": Uuid::new_v4().to_string()
+    });
+    let result = send_json_rpc(&app_handle, "s3_sync_to_cockroachdb", params, None).await?;
+    Ok(result)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -819,6 +834,7 @@ pub fn run() {
             get_runbooks,
             save_runbook,
             get_fix_history,
+            s3_sync_to_cockroachdb,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

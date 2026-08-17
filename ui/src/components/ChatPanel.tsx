@@ -25,6 +25,7 @@ import {
   ApiOutlined,
   SyncOutlined,
   AlertOutlined,
+  CloudSyncOutlined,
   CloseOutlined
 } from '@ant-design/icons';
 const { Dragger } = Upload;
@@ -108,6 +109,7 @@ export default function ChatPanel() {
   const [isLoadingSre, setIsLoadingSre] = useState<boolean>(false);
   const [isIncidentModalOpen, setIsIncidentModalOpen] = useState<boolean>(false);
   const [isRunbookModalOpen, setIsRunbookModalOpen] = useState<boolean>(false);
+  const [isSyncingS3, setIsSyncingS3] = useState<boolean>(false);
 
   // SRE Form Hooks
   const [incTitle, setIncTitle] = useState('');
@@ -562,6 +564,7 @@ export default function ChatPanel() {
       
       await loadSessions();
       await loadChatHistory();
+      loadSreData();
     } catch (error) {
       console.error('Failed to initialize backend:', error);
       antdMessage.error('Failed to start AI backend. Please check Python installation and dependencies.');
@@ -803,6 +806,25 @@ export default function ChatPanel() {
     }
   };
 
+  const handleSyncFromS3 = async () => {
+    setIsSyncingS3(true);
+    try {
+      const res: any = await invoke('s3_sync_to_cockroachdb', { prefix: '', limit: 50 });
+      if (res?.success !== false) {
+        const count = res?.indexed_count ?? res?.synced ?? res?.count ?? 'all';
+        antdMessage.success(`Synced and vector-indexed ${count} objects from Amazon S3 into CockroachDB!`);
+        await loadSreData();
+      } else {
+        antdMessage.error(`S3 sync failed: ${res?.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Failed to sync from S3:', error);
+      antdMessage.error(`Failed to sync from AWS S3: ${error}`);
+    } finally {
+      setIsSyncingS3(false);
+    }
+  };
+
   const handleIngestIncident = async () => {
     if (!incTitle.trim()) {
       antdMessage.warning('Incident title is required');
@@ -883,8 +905,369 @@ export default function ChatPanel() {
         }}
       >
         <Tabs
-          defaultActiveKey="models"
+          defaultActiveKey="sre"
           items={[
+            {
+              key: 'sre',
+              label: <span><AlertOutlined /> SRE Console</span>,
+              children: (
+                <div style={{ marginTop: '8px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                    <Typography.Paragraph type="secondary" style={{ margin: 0, fontSize: '13px' }}>
+                      Monitor production incidents, view runbook playbooks, and inspect the resolution fix history stored in CockroachDB. All items are auto-indexed in pgvector.
+                    </Typography.Paragraph>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <Button 
+                        size="small" 
+                        icon={<CloudSyncOutlined />} 
+                        onClick={handleSyncFromS3}
+                        loading={isSyncingS3}
+                        style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', borderColor: 'rgba(56, 189, 248, 0.3)' }}
+                      >
+                        Sync from AWS S3
+                      </Button>
+                      <Button 
+                        size="small" 
+                        icon={<SyncOutlined />} 
+                        onClick={loadSreData}
+                        loading={isLoadingSre}
+                        style={{ background: 'rgba(255, 255, 255, 0.05)', color: '#f8fafc', borderColor: 'rgba(255, 255, 255, 0.1)' }}
+                      >
+                        Refresh
+                      </Button>
+                      <Button 
+                        type="primary" 
+                        size="small" 
+                        danger
+                        icon={<AlertOutlined />} 
+                        onClick={() => setIsIncidentModalOpen(true)}
+                        style={{ background: '#dc2626', borderColor: '#dc2626' }}
+                      >
+                        Ingest Incident
+                      </Button>
+                      <Button 
+                        type="primary" 
+                        size="small" 
+                        icon={<PlusOutlined />} 
+                        onClick={() => setIsRunbookModalOpen(true)}
+                        style={{ background: '#0284c7', borderColor: '#0284c7' }}
+                      >
+                        Add Runbook
+                      </Button>
+                    </div>
+                  </div>
+
+                  <Collapse 
+                    defaultActiveKey={['incidents', 'runbooks']} 
+                    ghost 
+                    style={{ background: 'transparent' }}
+                  >
+                    <Collapse.Panel 
+                      header={<span style={{ color: '#ef4444', fontWeight: 600 }}>Active Production Incidents ({sreIncidents.length})</span>} 
+                      key="incidents"
+                    >
+                      <Table
+                        size="small"
+                        dataSource={sreIncidents}
+                        rowKey="id"
+                        pagination={{ pageSize: 5, size: 'small' }}
+                        columns={[
+                          {
+                            title: 'Status',
+                            dataIndex: 'status',
+                            key: 'status',
+                            width: 120,
+                            render: (status) => (
+                              <Tag color={status === 'RESOLVED' ? 'success' : status === 'INVESTIGATING' ? 'warning' : 'error'}>
+                                {status}
+                              </Tag>
+                            )
+                          },
+                          {
+                            title: 'Severity',
+                            dataIndex: 'severity',
+                            key: 'severity',
+                            width: 90,
+                            render: (sev) => <Tag color={sev === 'P1' ? 'red' : sev === 'P2' ? 'orange' : 'blue'}>{sev}</Tag>
+                          },
+                          {
+                            title: 'Service',
+                            dataIndex: 'service_name',
+                            key: 'service_name',
+                            width: 130,
+                            render: (svc) => <Tag color="default">{svc || 'unknown'}</Tag>
+                          },
+                          {
+                            title: 'Title',
+                            dataIndex: 'title',
+                            key: 'title',
+                            render: (text) => <span style={{ fontWeight: 500, color: '#f8fafc' }}>{text}</span>
+                          },
+                          {
+                            title: 'Logged At',
+                            dataIndex: 'created_at',
+                            key: 'created_at',
+                            width: 140,
+                            render: (date) => <span style={{ fontSize: '11px', color: '#64748b' }}>{new Date(date).toLocaleString()}</span>
+                          }
+                        ]}
+                      />
+                    </Collapse.Panel>
+
+                    <Collapse.Panel 
+                      header={<span style={{ color: '#38bdf8', fontWeight: 600 }}>SRE Diagnostic Playbooks & Runbooks ({sreRunbooks.length})</span>} 
+                      key="runbooks"
+                    >
+                      <Table
+                        size="small"
+                        dataSource={sreRunbooks}
+                        rowKey="id"
+                        pagination={{ pageSize: 5, size: 'small' }}
+                        expandable={{
+                          expandedRowRender: record => (
+                            <div style={{ background: '#05070f', padding: '12px', borderRadius: '6px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                              <div style={{ color: '#38bdf8', fontWeight: 600, marginBottom: '6px', fontSize: '12px' }}>Playbook Instructions:</div>
+                              <div style={{ whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: '12px', color: '#cbd5e1' }}>
+                                {record.content}
+                              </div>
+                            </div>
+                          ),
+                          rowExpandable: record => !!record.content,
+                        }}
+                        columns={[
+                          {
+                            title: 'Service',
+                            dataIndex: 'service_name',
+                            key: 'service_name',
+                            width: 130,
+                            render: (svc) => <Tag color="blue">{svc || 'global'}</Tag>
+                          },
+                          {
+                            title: 'Title',
+                            dataIndex: 'title',
+                            key: 'title',
+                            render: (text) => <span style={{ fontWeight: 500, color: '#f8fafc' }}>{text}</span>
+                          },
+                          {
+                            title: 'Author',
+                            dataIndex: 'author',
+                            key: 'author',
+                            width: 120,
+                          },
+                          {
+                            title: 'Saved At',
+                            dataIndex: 'created_at',
+                            key: 'created_at',
+                            width: 140,
+                            render: (date) => <span style={{ fontSize: '11px', color: '#64748b' }}>{new Date(date).toLocaleString()}</span>
+                          }
+                        ]}
+                      />
+                    </Collapse.Panel>
+
+                    <Collapse.Panel 
+                      header={<span style={{ color: '#4ade80', fontWeight: 600 }}>Resolution & Fix Actions History ({sreFixHistory.length})</span>} 
+                      key="history"
+                    >
+                      <Table
+                        size="small"
+                        dataSource={sreFixHistory}
+                        rowKey="id"
+                        pagination={{ pageSize: 5, size: 'small' }}
+                        columns={[
+                          {
+                            title: 'Outcome',
+                            dataIndex: 'success',
+                            key: 'success',
+                            width: 100,
+                            render: (success) => (
+                              <Tag color={success ? 'success' : 'error'}>
+                                {success ? 'SUCCESS' : 'FAILED'}
+                              </Tag>
+                            )
+                          },
+                          {
+                            title: 'Action Taken',
+                            dataIndex: 'action_taken',
+                            key: 'action_taken',
+                            render: (text) => <span style={{ color: '#cbd5e1' }}>{text}</span>
+                          },
+                          {
+                            title: 'Engineer Notes',
+                            dataIndex: 'engineer_notes',
+                            key: 'engineer_notes',
+                            render: (text) => <span style={{ fontStyle: 'italic', color: '#94a3b8' }}>{text || '-'}</span>
+                          },
+                          {
+                            title: 'Recorded At',
+                            dataIndex: 'created_at',
+                            key: 'created_at',
+                            width: 140,
+                            render: (date) => <span style={{ fontSize: '11px', color: '#64748b' }}>{new Date(date).toLocaleString()}</span>
+                          }
+                        ]}
+                      />
+                    </Collapse.Panel>
+                  </Collapse>
+                </div>
+              )
+            },
+            {
+              key: 'mcp',
+              label: <span><ApiOutlined /> MCP Servers</span>,
+              children: (
+                <div style={{ marginTop: '8px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                    <Typography.Paragraph type="secondary" style={{ margin: 0, fontSize: '13px' }}>
+                      Configure stdio-based Model Context Protocol (MCP) servers. Exposed tools are automatically namespaced under `mcp_[server]_[tool]` and available to both orchestrator and sub-agents.
+                    </Typography.Paragraph>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <Button 
+                        size="small" 
+                        icon={<SyncOutlined />} 
+                        onClick={loadMcpServers}
+                        style={{ background: 'rgba(255, 255, 255, 0.05)', color: '#f8fafc', borderColor: 'rgba(255, 255, 255, 0.1)' }}
+                      >
+                        Refresh
+                      </Button>
+                      <Button 
+                        type="primary" 
+                        size="small" 
+                        icon={<PlusOutlined />} 
+                        onClick={() => { resetMcpForm(); setEditingMcp(null); setIsMcpModalOpen(true); }}
+                        style={{ background: '#0284c7', borderColor: '#0284c7' }}
+                      >
+                        Add Server
+                      </Button>
+                    </div>
+                  </div>
+
+                  <List
+                    dataSource={mcpServers}
+                    locale={{ emptyText: 'No MCP servers configured. Add one to extend your agent capabilities!' }}
+                    renderItem={server => {
+                      const envKeys = Object.keys(server.env || {});
+                      return (
+                        <Card
+                          size="small"
+                          style={{
+                            background: 'rgba(255, 255, 255, 0.02)',
+                            borderColor: 'rgba(255, 255, 255, 0.08)',
+                            marginBottom: '12px'
+                          }}
+                          title={
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={{ color: '#38bdf8', fontWeight: 600 }}>{server.name}</span>
+                                <Tag color={server.status === 'Active' ? 'success' : server.status === 'Error' ? 'error' : 'default'} style={{ margin: 0, fontSize: '11px' }}>
+                                  ● {server.status}
+                                </Tag>
+                              </div>
+                              <div style={{ display: 'flex', gap: '6px' }}>
+                                <Button 
+                                  size="small"
+                                  icon={<FileTextOutlined />}
+                                  onClick={() => {
+                                    setSelectedLogsServer(server.name);
+                                    loadMcpLogs(server.name);
+                                    setLogsDrawerOpen(true);
+                                  }}
+                                  style={{ background: 'rgba(255,255,255,0.05)', color: '#f8fafc', borderColor: 'rgba(255,255,255,0.1)' }}
+                                >
+                                  Logs
+                                </Button>
+                                <Button
+                                  size="small"
+                                  icon={<EditOutlined />}
+                                  onClick={() => {
+                                    setEditingMcp(server);
+                                    setMcpName(server.name);
+                                    setMcpCommand(server.command);
+                                    setMcpArgsStr(JSON.stringify(server.args));
+                                    setMcpEnvStr(JSON.stringify(server.env, null, 2));
+                                    setMcpEnabled(server.enabled);
+                                    setIsMcpModalOpen(true);
+                                  }}
+                                  style={{ background: 'rgba(255,255,255,0.05)', color: '#e2e8f0', borderColor: 'rgba(255,255,255,0.1)' }}
+                                >
+                                  Edit
+                                </Button>
+                                <Popconfirm
+                                  title="Delete this MCP server configuration?"
+                                  onConfirm={() => handleDeleteMcpServer(server.name)}
+                                  okText="Delete"
+                                  cancelText="Cancel"
+                                >
+                                  <Button size="small" icon={<DeleteOutlined />} danger>
+                                    Delete
+                                  </Button>
+                                </Popconfirm>
+                              </div>
+                            </div>
+                          }
+                        >
+                          <div style={{ fontSize: '12px', color: '#94a3b8', marginBottom: '8px' }}>
+                            <span style={{ fontWeight: 600, color: '#f8fafc', marginRight: '6px' }}>Command:</span>
+                            <span style={{ fontFamily: 'monospace', background: '#0f172a', padding: '2px 6px', borderRadius: '4px' }}>
+                              {server.command} {server.args.join(' ')}
+                            </span>
+                          </div>
+
+                          {envKeys.length > 0 && (
+                            <div style={{ fontSize: '12px', color: '#94a3b8', marginBottom: '12px', display: 'flex', flexWrap: 'wrap', gap: '4px', alignItems: 'center' }}>
+                              <span style={{ fontWeight: 600, color: '#f8fafc', marginRight: '4px' }}>Env Keys:</span>
+                              {envKeys.map(k => <Tag key={k} color="blue" style={{ fontSize: '10px', margin: 0 }}>{k}</Tag>)}
+                            </div>
+                          )}
+
+                          {server.error_message && (
+                            <div style={{ color: '#ef4444', background: 'rgba(239, 68, 68, 0.08)', padding: '6px 10px', borderRadius: '4px', fontSize: '12px', fontFamily: 'monospace', marginBottom: '12px' }}>
+                              Error: {server.error_message}
+                            </div>
+                          )}
+
+                          {server.status === 'Active' && server.tools.length > 0 ? (
+                            <Collapse
+                              size="small"
+                              style={{ background: 'rgba(0,0,0,0.2)', border: 'none' }}
+                              ghost
+                              items={[
+                                {
+                                  key: 'tools',
+                                  label: <span style={{ color: '#cbd5e1', fontSize: '12px' }}>Discovered Tools ({server.tools.length})</span>,
+                                  children: (
+                                    <List
+                                      size="small"
+                                      dataSource={server.tools}
+                                      renderItem={(tool: any) => (
+                                        <List.Item style={{ padding: '6px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                                          <div style={{ width: '100%' }}>
+                                            <Tag color="purple" style={{ fontFamily: 'monospace', fontSize: '11px' }}>
+                                              mcp_{server.name}_{tool.name}
+                                            </Tag>
+                                            <span style={{ color: '#cbd5e1', fontSize: '12px', display: 'block', marginTop: '4px' }}>
+                                              {tool.description}
+                                            </span>
+                                          </div>
+                                        </List.Item>
+                                      )}
+                                    />
+                                  )
+                                }
+                              ]}
+                            />
+                          ) : (
+                            <div style={{ color: '#64748b', fontSize: '11px' }}>
+                              {server.status === 'Active' ? 'No tools exposed by this server.' : 'Exposed tools will be listed here when active.'}
+                            </div>
+                          )}
+                        </Card>
+                      );
+                    }}
+                  />
+                </div>
+              )
+            },
             {
               key: 'models',
               label: <span><KeyOutlined /> Models & API Keys</span>,
@@ -950,6 +1333,7 @@ export default function ChatPanel() {
                                 { value: 'anthropic', label: 'Anthropic' },
                                 { value: 'groq', label: 'Groq' },
                                 { value: 'mistral', label: 'Mistral AI' },
+                                { value: 'openrouter', label: 'OpenRouter' },
                               ]}
                             />
 
@@ -1141,358 +1525,6 @@ export default function ChatPanel() {
                       </List.Item>
                     )}
                   />
-                </div>
-              )
-            },
-            {
-              key: 'mcp',
-              label: <span><ApiOutlined /> MCP Servers</span>,
-              children: (
-                <div style={{ marginTop: '8px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                    <Typography.Paragraph type="secondary" style={{ margin: 0, fontSize: '13px' }}>
-                      Configure stdio-based Model Context Protocol (MCP) servers. Exposed tools are automatically namespaced under `mcp_[server]_[tool]` and available to both orchestrator and sub-agents.
-                    </Typography.Paragraph>
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <Button 
-                        size="small" 
-                        icon={<SyncOutlined />} 
-                        onClick={loadMcpServers}
-                        style={{ background: 'rgba(255, 255, 255, 0.05)', color: '#f8fafc', borderColor: 'rgba(255, 255, 255, 0.1)' }}
-                      >
-                        Refresh
-                      </Button>
-                      <Button 
-                        type="primary" 
-                        size="small" 
-                        icon={<PlusOutlined />} 
-                        onClick={() => { resetMcpForm(); setEditingMcp(null); setIsMcpModalOpen(true); }}
-                        style={{ background: '#0284c7', borderColor: '#0284c7' }}
-                      >
-                        Add Server
-                      </Button>
-                    </div>
-                  </div>
-
-                  <List
-                    dataSource={mcpServers}
-                    locale={{ emptyText: 'No MCP servers configured. Add one to extend your agent capabilities!' }}
-                    renderItem={server => {
-                      const envKeys = Object.keys(server.env || {});
-                      return (
-                        <Card
-                          size="small"
-                          style={{
-                            background: 'rgba(255, 255, 255, 0.02)',
-                            borderColor: 'rgba(255, 255, 255, 0.08)',
-                            marginBottom: '12px'
-                          }}
-                          title={
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <span style={{ color: '#38bdf8', fontWeight: 600 }}>{server.name}</span>
-                                <Tag color={server.status === 'Active' ? 'success' : server.status === 'Error' ? 'error' : 'default'} style={{ margin: 0, fontSize: '11px' }}>
-                                  ● {server.status}
-                                </Tag>
-                              </div>
-                              <div style={{ display: 'flex', gap: '6px' }}>
-                                <Button 
-                                  size="small"
-                                  icon={<FileTextOutlined />}
-                                  onClick={() => {
-                                    setSelectedLogsServer(server.name);
-                                    loadMcpLogs(server.name);
-                                    setLogsDrawerOpen(true);
-                                  }}
-                                  style={{ background: 'rgba(255,255,255,0.05)', color: '#f8fafc', borderColor: 'rgba(255,255,255,0.1)' }}
-                                >
-                                  Logs
-                                </Button>
-                                <Button
-                                  size="small"
-                                  icon={<EditOutlined />}
-                                  onClick={() => {
-                                    setEditingMcp(server);
-                                    setMcpName(server.name);
-                                    setMcpCommand(server.command);
-                                    setMcpArgsStr(JSON.stringify(server.args));
-                                    setMcpEnvStr(JSON.stringify(server.env, null, 2));
-                                    setMcpEnabled(server.enabled);
-                                    setIsMcpModalOpen(true);
-                                  }}
-                                  style={{ background: 'rgba(255,255,255,0.05)', color: '#e2e8f0', borderColor: 'rgba(255,255,255,0.1)' }}
-                                >
-                                  Edit
-                                </Button>
-                                <Popconfirm
-                                  title="Delete this MCP server configuration?"
-                                  onConfirm={() => handleDeleteMcpServer(server.name)}
-                                  okText="Delete"
-                                  cancelText="Cancel"
-                                >
-                                  <Button size="small" icon={<DeleteOutlined />} danger>
-                                    Delete
-                                  </Button>
-                                </Popconfirm>
-                              </div>
-                            </div>
-                          }
-                        >
-                          <div style={{ fontSize: '12px', color: '#94a3b8', marginBottom: '8px' }}>
-                            <span style={{ fontWeight: 600, color: '#f8fafc', marginRight: '6px' }}>Command:</span>
-                            <span style={{ fontFamily: 'monospace', background: '#0f172a', padding: '2px 6px', borderRadius: '4px' }}>
-                              {server.command} {server.args.join(' ')}
-                            </span>
-                          </div>
-
-                          {envKeys.length > 0 && (
-                            <div style={{ fontSize: '12px', color: '#94a3b8', marginBottom: '12px', display: 'flex', flexWrap: 'wrap', gap: '4px', alignItems: 'center' }}>
-                              <span style={{ fontWeight: 600, color: '#f8fafc', marginRight: '4px' }}>Env Keys:</span>
-                              {envKeys.map(k => <Tag key={k} color="blue" style={{ fontSize: '10px', margin: 0 }}>{k}</Tag>)}
-                            </div>
-                          )}
-
-                          {server.error_message && (
-                            <div style={{ color: '#ef4444', background: 'rgba(239, 68, 68, 0.08)', padding: '6px 10px', borderRadius: '4px', fontSize: '12px', fontFamily: 'monospace', marginBottom: '12px' }}>
-                              Error: {server.error_message}
-                            </div>
-                          )}
-
-                          {server.status === 'Active' && server.tools.length > 0 ? (
-                            <Collapse
-                              size="small"
-                              style={{ background: 'rgba(0,0,0,0.2)', border: 'none' }}
-                              ghost
-                              items={[
-                                {
-                                  key: 'tools',
-                                  label: <span style={{ color: '#cbd5e1', fontSize: '12px' }}>Discovered Tools ({server.tools.length})</span>,
-                                  children: (
-                                    <List
-                                      size="small"
-                                      dataSource={server.tools}
-                                      renderItem={(tool: any) => (
-                                        <List.Item style={{ padding: '6px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                                          <div style={{ width: '100%' }}>
-                                            <Tag color="purple" style={{ fontFamily: 'monospace', fontSize: '11px' }}>
-                                              mcp_{server.name}_{tool.name}
-                                            </Tag>
-                                            <span style={{ color: '#cbd5e1', fontSize: '12px', display: 'block', marginTop: '4px' }}>
-                                              {tool.description}
-                                            </span>
-                                          </div>
-                                        </List.Item>
-                                      )}
-                                    />
-                                  )
-                                }
-                              ]}
-                            />
-                          ) : (
-                            <div style={{ color: '#64748b', fontSize: '11px' }}>
-                              {server.status === 'Active' ? 'No tools exposed by this server.' : 'Exposed tools will be listed here when active.'}
-                            </div>
-                          )}
-                        </Card>
-                      );
-                    }}
-                  />
-                </div>
-              )
-            },
-            {
-              key: 'sre',
-              label: <span><AlertOutlined /> SRE Console</span>,
-              children: (
-                <div style={{ marginTop: '8px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                    <Typography.Paragraph type="secondary" style={{ margin: 0, fontSize: '13px' }}>
-                      Monitor production incidents, view runbook playbooks, and inspect the resolution fix history stored in CockroachDB. All items are auto-indexed in pgvector.
-                    </Typography.Paragraph>
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <Button 
-                        size="small" 
-                        icon={<SyncOutlined />} 
-                        onClick={loadSreData}
-                        loading={isLoadingSre}
-                        style={{ background: 'rgba(255, 255, 255, 0.05)', color: '#f8fafc', borderColor: 'rgba(255, 255, 255, 0.1)' }}
-                      >
-                        Refresh
-                      </Button>
-                      <Button 
-                        type="primary" 
-                        size="small" 
-                        danger
-                        icon={<AlertOutlined />} 
-                        onClick={() => setIsIncidentModalOpen(true)}
-                        style={{ background: '#dc2626', borderColor: '#dc2626' }}
-                      >
-                        Ingest Incident
-                      </Button>
-                      <Button 
-                        type="primary" 
-                        size="small" 
-                        icon={<PlusOutlined />} 
-                        onClick={() => setIsRunbookModalOpen(true)}
-                        style={{ background: '#0284c7', borderColor: '#0284c7' }}
-                      >
-                        Add Runbook
-                      </Button>
-                    </div>
-                  </div>
-
-                  <Collapse 
-                    defaultActiveKey={['incidents', 'runbooks']} 
-                    ghost 
-                    style={{ background: 'transparent' }}
-                  >
-                    <Collapse.Panel 
-                      header={<span style={{ color: '#ef4444', fontWeight: 600 }}>Active Production Incidents ({sreIncidents.length})</span>} 
-                      key="incidents"
-                    >
-                      <Table
-                        size="small"
-                        dataSource={sreIncidents}
-                        rowKey="id"
-                        pagination={{ pageSize: 5, size: 'small' }}
-                        columns={[
-                          {
-                            title: 'Status',
-                            dataIndex: 'status',
-                            key: 'status',
-                            width: 120,
-                            render: (status) => (
-                              <Tag color={status === 'RESOLVED' ? 'success' : status === 'INVESTIGATING' ? 'warning' : 'error'}>
-                                {status}
-                              </Tag>
-                            )
-                          },
-                          {
-                            title: 'Severity',
-                            dataIndex: 'severity',
-                            key: 'severity',
-                            width: 90,
-                            render: (sev) => <Tag color={sev === 'P1' ? 'red' : sev === 'P2' ? 'orange' : 'blue'}>{sev}</Tag>
-                          },
-                          {
-                            title: 'Service',
-                            dataIndex: 'service_name',
-                            key: 'service_name',
-                            width: 130,
-                            render: (svc) => <Tag color="default">{svc || 'unknown'}</Tag>
-                          },
-                          {
-                            title: 'Title',
-                            dataIndex: 'title',
-                            key: 'title',
-                            render: (text) => <span style={{ fontWeight: 500, color: '#f8fafc' }}>{text}</span>
-                          },
-                          {
-                            title: 'Logged At',
-                            dataIndex: 'created_at',
-                            key: 'created_at',
-                            width: 140,
-                            render: (date) => <span style={{ fontSize: '11px', color: '#64748b' }}>{new Date(date).toLocaleString()}</span>
-                          }
-                        ]}
-                      />
-                    </Collapse.Panel>
-
-                    <Collapse.Panel 
-                      header={<span style={{ color: '#38bdf8', fontWeight: 600 }}>SRE Diagnostic Playbooks & Runbooks ({sreRunbooks.length})</span>} 
-                      key="runbooks"
-                    >
-                      <Table
-                        size="small"
-                        dataSource={sreRunbooks}
-                        rowKey="id"
-                        pagination={{ pageSize: 5, size: 'small' }}
-                        expandable={{
-                          expandedRowRender: record => (
-                            <div style={{ background: '#05070f', padding: '12px', borderRadius: '6px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
-                              <div style={{ color: '#38bdf8', fontWeight: 600, marginBottom: '6px', fontSize: '12px' }}>Playbook Instructions:</div>
-                              <div style={{ whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: '12px', color: '#cbd5e1' }}>
-                                {record.content}
-                              </div>
-                            </div>
-                          ),
-                          rowExpandable: record => !!record.content,
-                        }}
-                        columns={[
-                          {
-                            title: 'Service',
-                            dataIndex: 'service_name',
-                            key: 'service_name',
-                            width: 130,
-                            render: (svc) => <Tag color="blue">{svc || 'global'}</Tag>
-                          },
-                          {
-                            title: 'Title',
-                            dataIndex: 'title',
-                            key: 'title',
-                            render: (text) => <span style={{ fontWeight: 500, color: '#f8fafc' }}>{text}</span>
-                          },
-                          {
-                            title: 'Author',
-                            dataIndex: 'author',
-                            key: 'author',
-                            width: 120,
-                          },
-                          {
-                            title: 'Saved At',
-                            dataIndex: 'created_at',
-                            key: 'created_at',
-                            width: 140,
-                            render: (date) => <span style={{ fontSize: '11px', color: '#64748b' }}>{new Date(date).toLocaleString()}</span>
-                          }
-                        ]}
-                      />
-                    </Collapse.Panel>
-
-                    <Collapse.Panel 
-                      header={<span style={{ color: '#4ade80', fontWeight: 600 }}>Resolution & Fix Actions History ({sreFixHistory.length})</span>} 
-                      key="history"
-                    >
-                      <Table
-                        size="small"
-                        dataSource={sreFixHistory}
-                        rowKey="id"
-                        pagination={{ pageSize: 5, size: 'small' }}
-                        columns={[
-                          {
-                            title: 'Outcome',
-                            dataIndex: 'success',
-                            key: 'success',
-                            width: 100,
-                            render: (success) => (
-                              <Tag color={success ? 'success' : 'error'}>
-                                {success ? 'SUCCESS' : 'FAILED'}
-                              </Tag>
-                            )
-                          },
-                          {
-                            title: 'Action Taken',
-                            dataIndex: 'action_taken',
-                            key: 'action_taken',
-                            render: (text) => <span style={{ color: '#cbd5e1' }}>{text}</span>
-                          },
-                          {
-                            title: 'Engineer Notes',
-                            dataIndex: 'engineer_notes',
-                            key: 'engineer_notes',
-                            render: (text) => <span style={{ fontStyle: 'italic', color: '#94a3b8' }}>{text || '-'}</span>
-                          },
-                          {
-                            title: 'Recorded At',
-                            dataIndex: 'created_at',
-                            key: 'created_at',
-                            width: 140,
-                            render: (date) => <span style={{ fontSize: '11px', color: '#64748b' }}>{new Date(date).toLocaleString()}</span>
-                          }
-                        ]}
-                      />
-                    </Collapse.Panel>
-                  </Collapse>
                 </div>
               )
             }
