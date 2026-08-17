@@ -437,7 +437,7 @@ class BasicTools:
                 {"role": "user", "content": content_list if len(content_list) > 1 else content_list[0]["text"]}
             ]
 
-            print(f"🤖 Supervisor delegating task to role [{role_key.upper()}] using model ({target_model})...")
+            print(f"[SUPERVISOR] Delegating task to role [{role_key.upper()}] using model ({target_model})...")
 
             import concurrent.futures
             import asyncio
@@ -739,7 +739,7 @@ class BasicTools:
             return False
         else:
             # Ask user (simulated)
-            print(f"⚠️  Permission requested: {action} on {resource}")
+            print(f"[SECURITY] Permission requested: {action} on {resource}")
             print("   Type 'allow' to grant or 'deny' to reject")
             # Simulate user allowing
             self.permission_cache[permission_key] = True

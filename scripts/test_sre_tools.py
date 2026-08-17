@@ -32,11 +32,11 @@ def run_test():
     print(f"Response: {ingest_res}")
     
     if not ingest_res.get("success"):
-        print("❌ Incident ingestion failed!")
+        print("[FAIL] Incident ingestion failed!")
         sys.exit(1)
         
     incident_id = ingest_res["result"]["incident_id"]
-    print(f"🟢 Incident ingested successfully. ID: {incident_id}")
+    print(f"[OK] Incident ingested successfully. ID: {incident_id}")
     
     # 2. Test Saving a Runbook Playbook
     print("\n2. Testing Saving a Runbook Playbook...")
@@ -51,11 +51,11 @@ def run_test():
     print(f"Response: {runbook_res}")
     
     if not runbook_res.get("success"):
-        print("❌ Runbook saving failed!")
+        print("[FAIL] Runbook saving failed!")
         sys.exit(1)
         
     runbook_id = runbook_res["result"]["runbook_id"]
-    print(f"🟢 Runbook saved successfully. ID: {runbook_id}")
+    print(f"[OK] Runbook saved successfully. ID: {runbook_id}")
     
     # 3. Test Querying Incidents and Runbooks lists
     print("\n3. Testing Retrieval queries...")
@@ -79,11 +79,11 @@ def run_test():
     print(f"Response: {fix_res}")
     
     if not fix_res.get("success"):
-        print("❌ Fix action recording failed!")
+        print("[FAIL] Fix action recording failed!")
         sys.exit(1)
         
     fix_id = fix_res["result"]["fix_id"]
-    print(f"🟢 Fix action recorded successfully. ID: {fix_id}")
+    print(f"[OK] Fix action recorded successfully. ID: {fix_id}")
     
     # Verify that the incident was auto-resolved
     check_incidents = tm.execute_tool("get_incidents", {"status": "RESOLVED", "limit": 5})
@@ -91,11 +91,11 @@ def run_test():
     for inc in check_incidents.get("result", []):
         if inc["id"] == incident_id:
             resolved_found = True
-            print(f"🟢 Incident status correctly updated to RESOLVED in CockroachDB. Root cause logged: '{inc['root_cause']}'")
+            print(f"[OK] Incident status correctly updated to RESOLVED in CockroachDB. Root cause logged: '{inc['root_cause']}'")
             break
             
     if not resolved_found:
-        print("❌ Incident status was NOT auto-resolved in CockroachDB!")
+        print("[FAIL] Incident status was NOT auto-resolved in CockroachDB!")
         sys.exit(1)
         
     # Query Fix history
@@ -116,9 +116,9 @@ def run_test():
     # Check if our runbook or incident shows up in RAG results
     matching_found = any(f"runbook:{runbook_id}" in r.get('metadata', {}).get('file_path', '') for r in rag_res)
     if matching_found:
-        print("✅ Success: Semantic vector search retrieved our new runbook segment from pgvector on CockroachDB!")
+        print("[SUCCESS] Success: Semantic vector search retrieved our new runbook segment from pgvector on CockroachDB!")
     else:
-        print("❌ Error: Semantic vector search could NOT retrieve the runbook document!")
+        print("[FAIL] Error: Semantic vector search could NOT retrieve the runbook document!")
         sys.exit(1)
         
     print("\n=== All SRE Tool and pgvector Integration Tests Passed ===")

@@ -34,7 +34,7 @@ from src.utils.prompt_loader import PromptLoader
 # ── Agent capability cards (what each sub-agent is and what it can do) ──────────
 AGENT_CARDS = {
     "reasoning": {
-        "name": "💡 Reasoning & Architecture Agent",
+        "name": "Reasoning & Architecture Agent",
         "role": "reasoning",
         "description": (
             "Expert in step-by-step logical decomposition, system architecture, "
@@ -43,7 +43,7 @@ AGENT_CARDS = {
         ),
     },
     "coding": {
-        "name": "🤖 Coding & Execution Agent",
+        "name": "Coding & Execution Agent",
         "role": "coding",
         "description": (
             "Expert in writing production-ready, well-typed, fully-functional code "
@@ -51,7 +51,7 @@ AGENT_CARDS = {
         ),
     },
     "multimodal": {
-        "name": "👁️ Multimodal & Vision Specialist",
+        "name": "Multimodal & Vision Specialist",
         "role": "multimodal",
         "description": (
             "Expert in analysing attached images, screenshots, UI wireframes, "
@@ -137,7 +137,7 @@ class SubAgentManager:
 
         team_intro = _build_team_intro(active_roles)
         print(
-            f"🚀 Launching Multi-Model Team ({len(active_roles)} agents): "
+            f"[TEAM] Launching Multi-Model Team ({len(active_roles)} agents): "
             + ", ".join(active_roles),
             file=sys.stderr, flush=True,
         )
@@ -218,7 +218,7 @@ class SubAgentManager:
         card = AGENT_CARDS["coding"]
         base_prompt = PromptLoader.get_prompt("coding_prompt", "Implement the architectural plan faithfully with complete production code.")
         relay_context = (
-            "── RELAY FROM 💡 Reasoning & Architecture Agent ──\n"
+            "── RELAY FROM Reasoning & Architecture Agent ──\n"
             f"{reasoning_plan}\n"
             "── END RELAY ──\n\n"
             "Implement the architectural plan above for the user's request."
@@ -245,7 +245,7 @@ class SubAgentManager:
             f"YOUR ROLE: {card['name']} — Code Reviewer\n"
             "TASK:\n"
             "The Coding Agent has produced an implementation based on your architectural plan.\n"
-            "Review it for correctness, bugs, edge-cases, and security concerns. Output '✅ LGTM' or specific notes."
+            "Review it for correctness, bugs, edge-cases, and security concerns. Output 'LGTM' or specific notes."
         )
         review_message = (
             f"Original user request:\n{user_message}\n\n"
@@ -374,7 +374,7 @@ class SubAgentManager:
             })
 
             # Print tool logs to UI via stderr
-            print(f"🤖 Sub-agent [{role}] invoking {len(tool_calls)} tools...", file=sys.stderr, flush=True)
+            print(f"[SUB-AGENT] Sub-agent [{role}] invoking {len(tool_calls)} tools...", file=sys.stderr, flush=True)
 
             for tc in tool_calls:
                 tc_id = tc.get("id")
@@ -410,7 +410,7 @@ class SubAgentManager:
         # Stream live sub-agent output to UI via stderr
         log_payload = json.dumps({"role": role, "model": active_model, "reply": content})
         print(f"SUB_AGENT_MSG:{log_payload}", file=sys.stderr, flush=True)
-        print(f"✅ Sub-agent [{role}] completed.", file=sys.stderr, flush=True)
+        print(f"[SUB-AGENT] Sub-agent [{role}] completed.", file=sys.stderr, flush=True)
 
         return {
             "role": role,

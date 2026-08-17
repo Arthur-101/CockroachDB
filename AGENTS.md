@@ -305,16 +305,23 @@ data/
   - Cloned the open-source [`rmyndharis/antigravity-skills`](https://github.com/rmyndharis/antigravity-skills) repository to `E:\Codes\AgenticAI\antigravity-skills-temp`.
   - Installed a curated collection of 11 developer skills (`python-pro`, `fastapi-pro`, `async-python-patterns`, `uv-package-manager`, `ai-engineer`, `rag-implementation`, `vector-database-engineer`, `embedding-strategies`, `react-state-management`, `frontend-developer`, and the global `antigravity-skills-manager`) directly into the global customizations directory (`C:\Users\SAURAV\.gemini\config\skills/`).
   - These skills are now available globally and automatically loaded on-demand by Antigravity using progressive disclosure to optimize token usage.
-- **Tauri SRE Incident & Playbook Console UI (`ui/src/components/ChatPanel.tsx`, `ui/src-tauri/src/lib.rs`, `src/api/embedded_backend.py`)**:
-  - Implemented a complete 🚨 **SRE Console** tab inside the Settings Modal.
-  - Implemented high-fidelity data tables to display active production incidents (with status, severity, service tags), SRE playbooks/runbooks (with expandable playbook step-by-step instructions), and resolution fix action history.
-  - Implemented popups and modals with fields to ingest new incidents (title, severity, component, description, metadata JSON logs) and register custom playbooks/runbooks.
-  - Added new backend JSON-RPC methods and Tauri Rust invoke commands (`get_incidents`, `ingest_incident`, `get_runbooks`, `save_runbook`, `get_fix_history`) to bridge database storage and RAG vector indexing with the React frontend.
-  - Rebranded the entire desktop application to **CockroachSRE** across `tauri.conf.json`, window titles, main layout headers, input placeholders, and copyright footers.
-  - Upgraded the ASCII architecture diagram in `README.md` to a visual Mermaid flowchart block mapping the data flow of the CockroachSRE system.
+- **CockroachDB Cloud Managed MCP Streamable HTTP Transport (`src/tools/mcp_manager.py`, `data/mcp_config.json`)**:
+  - Resolved HTTP `405 Method Not Allowed` when connecting to `https://cockroachlabs.cloud/mcp`.
+  - Migrated `HttpMcpClient` from SSE (`sse_client` over HTTP GET) to Streamable HTTP transport (`streamable_http_client` with `create_mcp_http_client` over HTTP POST).
+  - Updated `data/mcp_config.json` command for `cockroach` server from `"sse"` to `"http"`.
+  - Added intelligent header resolution for `mcp-cluster-id` and Bearer token parsing from `COCKROACH_MCP_API_KEY` / `COCKROACH_CLOUD_API_KEY` / `.env` / database.
+
+- **UI & Role Configuration Cleanup (`ui/src/components/ChatPanel.tsx`)**:
+  - Removed "Model Catalog & Tracker" tab from Settings modal to streamline agent configuration.
+  - Removed Speech-to-Text (STT) and Text-to-Speech (TTS) role cards from agent role settings.
+  - Retained core 6 active agent roles: Main Orchestrator, Coding Sub-Agent, Reasoning Sub-Agent, Multimodal Specialist, Consensus Synthesizer, Background Summarizer & Memory.
+
+- **Complete Codebase Emoji Purge (`ui/`, `src/`, `scripts/`)**:
+  - Purged all emojis from the user interface (`ChatPanel.tsx`, `lib.rs` native Windows system tray menu, modal titles, dropdown items).
+  - Purged all emojis from backend Python source files (`consensus_aggregator.py`, `sub_agent_manager.py`, `provider_router.py`, `basic_tools.py`, `file_explorer_tool.py`, `config.py`, `test_mcp_client.py`, `test_mcp_normalization.py`, `scripts/init_cockroach.py`, `scripts/seed_s3_runbooks.py`, `scripts/test_sre_tools.py`, `scripts/test_vector_store.py`).
+  - Replaced emojis with clean, structured standard tags (`[INFO]`, `[SUCCESS]`, `[WARNING]`, `[ERROR]`, `[TEAM]`, `[SUB-AGENT]`, `[SECURITY]`, `[DIR]`, `[FILE]`, `[ROOT]`). Verified with repo-wide regex scanner: 0 emojis remaining.
 
 ## Planned Future Roadmap Tasks (Notion Tracked)
 - **Task 1: Live Token Usage & Budget Warning Tracker Widget**: Add live token/cost meter in top header bar showing expenditure ($) per session/model with dynamic OpenRouter pricing catalog sync, multi-tier protection (75% Soft Alert, 90% Auto-Downgrade, 100% Hard Cap), sub-agent cost attribution tagging, atomic Redis sync, and an analytics drawer with spending graphs.
 - **Task 2: Expanded Native MCP Tools**: Build `SystemMonitorTool` (CPU/RAM/Disk), `ProcessManagerTool` (active task management), and `GitInspectorTool` (git diffs/commits).
 - **Task 3: Autonomous Scheduled Background Workflows & Reminders**: One-shot & cron background scheduler for periodic health checks, repo backups, and AI reminders.
-- **Task 4: Voice Input & Speech-to-Text Dictation**: Mic button in input bar for hands-free prompt dictation.

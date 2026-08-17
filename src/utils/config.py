@@ -137,9 +137,9 @@ class ConfigManager:
         """Issue warnings if session cost exceeds configured thresholds."""
         total = self._cost_tracker["total_cost"]
         if total >= self.settings.cost_limit:
-            print(f"⚠️  COST LIMIT EXCEEDED: ${total:.2f} (limit: ${self.settings.cost_limit})")
+            print(f"[WARNING] COST LIMIT EXCEEDED: ${total:.2f} (limit: ${self.settings.cost_limit})")
         elif total >= self.settings.cost_warning_threshold:
-            print(f"⚠️  Cost warning: ${total:.2f} (threshold: ${self.settings.cost_warning_threshold})")
+            print(f"[WARNING] Cost warning: ${total:.2f} (threshold: ${self.settings.cost_warning_threshold})")
 
     def get_cost_summary(self) -> Dict[str, Any]:
         """Get current session cost summary."""

@@ -22,13 +22,10 @@ import {
   BulbOutlined,
   KeyOutlined,
   ExperimentOutlined,
-  StarOutlined,
-  StarFilled,
-  SearchOutlined,
-  TableOutlined,
   ApiOutlined,
   SyncOutlined,
-  AlertOutlined
+  AlertOutlined,
+  CloseOutlined
 } from '@ant-design/icons';
 const { Dragger } = Upload;
 import { useState, useEffect, useRef } from 'react';
@@ -81,8 +78,6 @@ export default function ChatPanel() {
     multimodal: { provider: 'google', model_id: 'gemini-2.0-flash' },
     synthesizer: { provider: 'google', model_id: 'gemini-2.0-flash' },
     summary: { provider: 'google', model_id: 'gemini-2.5-flash-lite' },
-    stt: { provider: 'groq', model_id: 'whisper-large-v3' },
-    tts: { provider: 'google', model_id: 'gemini-2.5-flash-tts' }
   });
   const [providerCatalog, setProviderCatalog] = useState<Record<string, Array<{id: string; name: string; cost_label: string; is_active: boolean}>>>({});
   const [apiKeys, setApiKeys] = useState<Array<{id: string; provider: string; label: string; masked_value: string; is_active: number}>>([]);
@@ -90,21 +85,6 @@ export default function ChatPanel() {
   const [newKeyValue, setNewKeyValue] = useState<string>('');
   const [newKeyLabel, setNewKeyLabel] = useState<string>('');
   const [isTestingKey, setIsTestingKey] = useState<boolean>(false);
-
-  // Model Tracker & Notes State
-  const [trackerData, setTrackerData] = useState<Array<{
-    model_id: string;
-    name: string;
-    provider: string;
-    cost_label: string;
-    is_active: boolean;
-    is_favorite: boolean;
-    notes: string;
-    call_count: number;
-    last_used: string | null;
-  }>>([]);
-  const [trackerSearch, setTrackerSearch] = useState<string>('');
-  const [isLoadingTracker, setIsLoadingTracker] = useState<boolean>(false);
 
   // MCP Settings State Hooks
   const [mcpServers, setMcpServers] = useState<any[]>([]);
@@ -167,30 +147,6 @@ export default function ChatPanel() {
     ['bedrock', 'google', 'openai', 'anthropic', 'groq', 'mistral'].forEach(p => loadProviderModels(p));
   };
 
-  const loadTrackerData = async () => {
-    setIsLoadingTracker(true);
-    try {
-      const res: any = await invoke('get_model_tracker_data');
-      if (res?.models && Array.isArray(res.models)) {
-        setTrackerData(res.models);
-      }
-    } catch (err) {
-      console.error('Failed to load tracker data:', err);
-    } finally {
-      setIsLoadingTracker(false);
-    }
-  };
-
-  const handleSaveModelNote = async (modelId: string, provider: string, isFavorite: boolean, notes: string) => {
-    try {
-      await invoke('save_model_note', { modelId, provider, isFavorite, notes });
-      setTrackerData(prev => prev.map(m => m.model_id === modelId ? { ...m, is_favorite: isFavorite, notes } : m));
-      antdMessage.success('Model note updated!');
-    } catch (err) {
-      antdMessage.error(`Failed to save model note: ${err}`);
-    }
-  };
-
   const getCleanModelId = (rawModelId: string, provider: string) => {
     if (!rawModelId) return '';
     let m = rawModelId.trim();
@@ -217,25 +173,7 @@ export default function ChatPanel() {
         console.error('Error fetching provider models:', e);
       }
     }
-    let targetModels = catalog || [];
-    if (role === 'stt') {
-      targetModels = targetModels.filter(m => 
-        m.id.toLowerCase().includes('whisper') ||
-        m.id.toLowerCase().includes('stt') ||
-        m.id.toLowerCase().includes('audio') ||
-        m.id.toLowerCase().includes('transcribe') ||
-        m.name.toLowerCase().includes('speech-to-text') ||
-        m.name.toLowerCase().includes('stt')
-      );
-    } else if (role === 'tts') {
-      targetModels = targetModels.filter(m => 
-        m.id.toLowerCase().includes('tts') ||
-        m.id.toLowerCase().includes('voice') ||
-        m.id.toLowerCase().includes('speech') ||
-        m.name.toLowerCase().includes('text-to-speech') ||
-        m.name.toLowerCase().includes('tts')
-      );
-    }
+    const targetModels = catalog || [];
     const firstActive = targetModels.find(m => m.is_active)?.id || '';
     handleUpdateRoleModel(role, newProv, firstActive);
   };
@@ -302,7 +240,7 @@ export default function ChatPanel() {
         key_value: val
       });
       if (res && res.success) {
-        antdMessage.success(`⚡ ${provider.toUpperCase()} API Key test successful!`);
+        antdMessage.success(`${provider.toUpperCase()} API Key test successful!`);
       } else {
         antdMessage.error(`API Key test failed: ${res?.error || 'Unknown error'}`);
       }
@@ -705,7 +643,6 @@ export default function ChatPanel() {
       loadRoleModels();
       loadApiKeys();
       loadMemories();
-      loadTrackerData();
       loadMcpServers();
     }
   }, [isSettingsOpen]);
@@ -959,45 +896,23 @@ export default function ChatPanel() {
 
                   {/* Role Model Configuration Cards */}
                   <Typography.Text strong style={{ color: '#38bdf8', display: 'block', marginBottom: '12px', fontSize: '14px' }}>
-                    ⚡ Dynamic Role Model Assignments
+                    Dynamic Role Model Assignments
                   </Typography.Text>
                   
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '24px' }}>
                     {[
-                      { role: 'orchestrator', label: '⚡ Main Orchestrator', desc: 'Fast, always-on default chat router' },
-                      { role: 'coding', label: '🤖 Coding Sub-Agent', desc: 'Code generation & execution specialist' },
-                      { role: 'reasoning', label: '💡 Reasoning Sub-Agent', desc: 'Architecture, logic & edge-case specialist' },
-                      { role: 'multimodal', label: '👁️ Multimodal Specialist', desc: 'Image, media & document analyzer' },
-                      { role: 'synthesizer', label: '🧩 Consensus Synthesizer', desc: 'Merges multi-model team outputs' },
-                      { role: 'summary', label: '🧠 Background Summarizer & Memory', desc: 'Context compression & fact extraction' },
-                      { role: 'stt', label: '🎙️ Speech-to-Text (STT) Dictation', desc: 'Audio transcription model dropdown' },
-                      { role: 'tts', label: '🔊 Text-to-Speech (TTS) Voice', desc: 'Speech synthesis model dropdown' },
+                      { role: 'orchestrator', label: 'Main Orchestrator', desc: 'Fast, always-on default chat router' },
+                      { role: 'coding', label: 'Coding Sub-Agent', desc: 'Code generation & execution specialist' },
+                      { role: 'reasoning', label: 'Reasoning Sub-Agent', desc: 'Architecture, logic & edge-case specialist' },
+                      { role: 'multimodal', label: 'Multimodal Specialist', desc: 'Image, media & document analyzer' },
+                      { role: 'synthesizer', label: 'Consensus Synthesizer', desc: 'Merges multi-model team outputs' },
+                      { role: 'summary', label: 'Background Summarizer & Memory', desc: 'Context compression & fact extraction' },
                     ].map(r => {
                       const roleConfig = roleModels[r.role] || { provider: 'openrouter', model_id: '' };
                       const currentProvider = roleConfig.provider || 'openrouter';
                       const cleanModelId = getCleanModelId(roleConfig.model_id, currentProvider);
 
-                      let catalogForProvider = providerCatalog[currentProvider] || [];
-
-                      // Apply strict role-specific filtering for STT and TTS models (do NOT fall back to non-audio models)
-                      if (r.role === 'stt') {
-                        catalogForProvider = catalogForProvider.filter(m => 
-                          m.id.toLowerCase().includes('whisper') ||
-                          m.id.toLowerCase().includes('stt') ||
-                          m.id.toLowerCase().includes('audio') ||
-                          m.id.toLowerCase().includes('transcribe') ||
-                          m.name.toLowerCase().includes('speech-to-text') ||
-                          m.name.toLowerCase().includes('stt')
-                        );
-                      } else if (r.role === 'tts') {
-                        catalogForProvider = catalogForProvider.filter(m => 
-                          m.id.toLowerCase().includes('tts') ||
-                          m.id.toLowerCase().includes('voice') ||
-                          m.id.toLowerCase().includes('speech') ||
-                          m.name.toLowerCase().includes('text-to-speech') ||
-                          m.name.toLowerCase().includes('tts')
-                        );
-                      }
+                      const catalogForProvider = providerCatalog[currentProvider] || [];
 
                       let selectOptions = catalogForProvider.map(m => {
                         const cleanOptVal = getCleanModelId(m.id, currentProvider);
@@ -1029,12 +944,12 @@ export default function ChatPanel() {
                               onChange={(newProv) => handleProviderChange(r.role, newProv)}
                               style={{ width: '100%' }}
                               options={[
-                                { value: 'bedrock', label: '☁️ AWS Bedrock' },
-                                { value: 'google', label: '🟢 Google AI Studio' },
-                                { value: 'openai', label: '🤖 OpenAI' },
-                                { value: 'anthropic', label: '🧠 Anthropic' },
-                                { value: 'groq', label: '🚀 Groq' },
-                                { value: 'mistral', label: '🇪🇺 Mistral AI' },
+                                { value: 'bedrock', label: 'AWS Bedrock' },
+                                { value: 'google', label: 'Google AI Studio' },
+                                { value: 'openai', label: 'OpenAI' },
+                                { value: 'anthropic', label: 'Anthropic' },
+                                { value: 'groq', label: 'Groq' },
+                                { value: 'mistral', label: 'Mistral AI' },
                               ]}
                             />
 
@@ -1043,8 +958,8 @@ export default function ChatPanel() {
                               showSearch
                               popupMatchSelectWidth={false}
                               value={cleanModelId || undefined}
-                              placeholder={r.role === 'tts' && selectOptions.length === 0 ? "No TTS models available" : "Select model..."}
-                              notFoundContent={r.role === 'tts' || r.role === 'stt' ? "No audio models available for this provider" : "No models found"}
+                              placeholder="Select model..."
+                              notFoundContent="No models found"
                               onChange={(newModelId) => handleUpdateRoleModel(r.role, currentProvider, newModelId)}
                               style={{ width: '100%' }}
                               filterOption={(input, option) =>
@@ -1074,7 +989,7 @@ export default function ChatPanel() {
 
                   {/* API Key Management */}
                   <Typography.Text strong style={{ color: '#38bdf8', display: 'block', marginBottom: '12px', fontSize: '14px' }}>
-                    🔑 Provider API Keys (SQLite Stored)
+                    Provider API Keys (CockroachDB Stored)
                   </Typography.Text>
 
                   <Card size="small" title="Add / Update Provider API Key" style={{ background: 'rgba(255, 255, 255, 0.03)', borderColor: 'rgba(255, 255, 255, 0.1)', marginBottom: '16px' }}>
@@ -1230,118 +1145,6 @@ export default function ChatPanel() {
               )
             },
             {
-              key: 'tracker',
-              label: <span><TableOutlined /> Model Catalog & Tracker</span>,
-              children: (
-                <div style={{ marginTop: '8px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                    <Typography.Paragraph type="secondary" style={{ margin: 0, fontSize: '13px' }}>
-                      Keep track of recently used models, mark favorites, and add custom notes for each model (persisted in SQLite).
-                    </Typography.Paragraph>
-                    <Input
-                      placeholder="Search models..."
-                      prefix={<SearchOutlined />}
-                      value={trackerSearch}
-                      onChange={e => setTrackerSearch(e.target.value)}
-                      style={{ width: 220, background: '#0f172a', color: '#f8fafc', borderColor: '#334155' }}
-                    />
-                  </div>
-
-                  <Table
-                    size="small"
-                    loading={isLoadingTracker}
-                    dataSource={trackerData
-                      .filter(m => 
-                        m.name.toLowerCase().includes(trackerSearch.toLowerCase()) ||
-                        m.model_id.toLowerCase().includes(trackerSearch.toLowerCase()) ||
-                        m.provider.toLowerCase().includes(trackerSearch.toLowerCase()) ||
-                        m.notes.toLowerCase().includes(trackerSearch.toLowerCase())
-                      )
-                      .sort((a, b) => (b.is_favorite ? 1 : 0) - (a.is_favorite ? 1 : 0))
-                    }
-                    rowKey="model_id"
-                    pagination={{ pageSize: 8, size: 'small' }}
-                    columns={[
-                      {
-                        title: '⭐',
-                        dataIndex: 'is_favorite',
-                        key: 'is_favorite',
-                        width: 45,
-                        render: (isFav, record) => (
-                          <Button
-                            type="text"
-                            size="small"
-                            icon={isFav ? <StarFilled style={{ color: '#f59e0b' }} /> : <StarOutlined style={{ color: '#64748b' }} />}
-                            onClick={() => handleSaveModelNote(record.model_id, record.provider, !isFav, record.notes)}
-                          />
-                        )
-                      },
-                      {
-                        title: 'Model',
-                        dataIndex: 'name',
-                        key: 'name',
-                        render: (name, record) => (
-                          <div>
-                            <div style={{ fontWeight: 600, color: '#f8fafc', fontSize: '12px' }}>{name}</div>
-                            <div style={{ fontSize: '11px', color: '#64748b', fontFamily: 'monospace' }}>{record.model_id}</div>
-                          </div>
-                        )
-                      },
-                      {
-                        title: 'Provider',
-                        dataIndex: 'provider',
-                        key: 'provider',
-                        width: 110,
-                        render: (prov) => (
-                          <Tag color="cyan" style={{ fontSize: '10px', textTransform: 'uppercase' }}>{prov}</Tag>
-                        )
-                      },
-                      {
-                        title: 'Pricing',
-                        dataIndex: 'cost_label',
-                        key: 'cost_label',
-                        width: 140,
-                        render: (cost) => (
-                          <span style={{ fontSize: '11px', color: '#94a3b8' }}>{cost}</span>
-                        )
-                      },
-                      {
-                        title: 'Usage',
-                        dataIndex: 'call_count',
-                        key: 'call_count',
-                        width: 90,
-                        render: (count) => (
-                          <Tag color={count > 0 ? 'blue' : 'default'} style={{ fontSize: '11px' }}>
-                            {count} calls
-                          </Tag>
-                        )
-                      },
-                      {
-                        title: '📝 User Notes',
-                        dataIndex: 'notes',
-                        key: 'notes',
-                        render: (notes, record) => (
-                          <Input.TextArea
-                            rows={1}
-                            size="small"
-                            placeholder="Add note..."
-                            defaultValue={notes}
-                            onBlur={(e) => {
-                              const val = e.target.value;
-                              if (val !== record.notes) {
-                                handleSaveModelNote(record.model_id, record.provider, record.is_favorite, val);
-                              }
-                            }}
-                            style={{ background: '#0f172a', color: '#f8fafc', borderColor: '#334155', fontSize: '11px', resize: 'vertical' }}
-                          />
-                        )
-                      }
-                    ]}
-                  />
-                </div>
-              )
-            },
-            {
               key: 'mcp',
               label: <span><ApiOutlined /> MCP Servers</span>,
               children: (
@@ -1463,7 +1266,7 @@ export default function ChatPanel() {
                               items={[
                                 {
                                   key: 'tools',
-                                  label: <span style={{ color: '#cbd5e1', fontSize: '12px' }}>🛠️ Discovered Tools ({server.tools.length})</span>,
+                                  label: <span style={{ color: '#cbd5e1', fontSize: '12px' }}>Discovered Tools ({server.tools.length})</span>,
                                   children: (
                                     <List
                                       size="small"
@@ -1544,7 +1347,7 @@ export default function ChatPanel() {
                     style={{ background: 'transparent' }}
                   >
                     <Collapse.Panel 
-                      header={<span style={{ color: '#ef4444', fontWeight: 600 }}>🚨 Active Production Incidents ({sreIncidents.length})</span>} 
+                      header={<span style={{ color: '#ef4444', fontWeight: 600 }}>Active Production Incidents ({sreIncidents.length})</span>} 
                       key="incidents"
                     >
                       <Table
@@ -1596,7 +1399,7 @@ export default function ChatPanel() {
                     </Collapse.Panel>
 
                     <Collapse.Panel 
-                      header={<span style={{ color: '#38bdf8', fontWeight: 600 }}>📖 SRE Diagnostic Playbooks & Runbooks ({sreRunbooks.length})</span>} 
+                      header={<span style={{ color: '#38bdf8', fontWeight: 600 }}>SRE Diagnostic Playbooks & Runbooks ({sreRunbooks.length})</span>} 
                       key="runbooks"
                     >
                       <Table
@@ -1647,7 +1450,7 @@ export default function ChatPanel() {
                     </Collapse.Panel>
 
                     <Collapse.Panel 
-                      header={<span style={{ color: '#4ade80', fontWeight: 600 }}>🛠️ Resolution & Fix Actions History ({sreFixHistory.length})</span>} 
+                      header={<span style={{ color: '#4ade80', fontWeight: 600 }}>Resolution & Fix Actions History ({sreFixHistory.length})</span>} 
                       key="history"
                     >
                       <Table
@@ -1745,10 +1548,10 @@ export default function ChatPanel() {
                 onChange={val => setIncSeverity(val)}
                 style={{ width: '100%' }}
                 options={[
-                  { value: 'P1', label: '🔴 P1 (Critical)' },
-                  { value: 'P2', label: '🟠 P2 (Major)' },
-                  { value: 'P3', label: '🟡 P3 (Medium)' },
-                  { value: 'P4', label: '🔵 P4 (Minor)' },
+                  { value: 'P1', label: 'P1 (Critical)' },
+                  { value: 'P2', label: 'P2 (Major)' },
+                  { value: 'P3', label: 'P3 (Medium)' },
+                  { value: 'P4', label: 'P4 (Minor)' },
                 ]}
               />
             </div>
@@ -1918,7 +1721,7 @@ export default function ChatPanel() {
       <Modal
         title={
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginRight: '24px' }}>
-            <span style={{ color: '#f8fafc' }}>🔌 Logs for '{selectedLogsServer}'</span>
+            <span style={{ color: '#f8fafc' }}>Logs for '{selectedLogsServer}'</span>
             <Button 
               size="small" 
               icon={<SyncOutlined />} 
@@ -2245,7 +2048,7 @@ export default function ChatPanel() {
                             fontSize: 14,
                             boxShadow: '0 4px 10px rgba(0,0,0,0.3)'
                           }}>
-                            {msg.role === 'sub_agent' ? '🤖' : 'A'}
+                            {msg.role === 'sub_agent' ? 'S' : 'A'}
                           </div>
                         )}
 
@@ -2500,7 +2303,7 @@ export default function ChatPanel() {
                           setAttachedFiles(prev => prev.filter(f => f.path !== file.path));
                         }}
                       >
-                        ✕
+                        <CloseOutlined style={{ fontSize: '10px' }} />
                       </button>
                     </div>
                   ) : (
@@ -2517,7 +2320,7 @@ export default function ChatPanel() {
                           setAttachedFiles(prev => prev.filter(f => f.path !== file.path));
                         }}
                       >
-                        ✕
+                        <CloseOutlined style={{ fontSize: '10px' }} />
                       </button>
                     </div>
                   );
@@ -2530,11 +2333,11 @@ export default function ChatPanel() {
                 onChange={setSelectedModel}
                 style={{ width: 170 }}
                 options={[
-                  { value: 'auto', label: '⚡ Auto (Orchestrator)' },
-                  { value: 'collaborative', label: '🤝 Multi-Model Team' },
-                  { value: 'coding', label: '🤖 Coding Specialist' },
-                  { value: 'reasoning', label: '💡 Reasoning Specialist' },
-                  { value: 'multimodal', label: '👁️ Vision Specialist' },
+                  { value: 'auto', label: 'Auto (Orchestrator)' },
+                  { value: 'collaborative', label: 'Multi-Model Team' },
+                  { value: 'coding', label: 'Coding Specialist' },
+                  { value: 'reasoning', label: 'Reasoning Specialist' },
+                  { value: 'multimodal', label: 'Vision Specialist' },
                 ]}
               />
               <Tooltip title="Attach Document / Code File (RAG Vector Memory)">
@@ -2768,7 +2571,7 @@ export default function ChatPanel() {
       >
         <div style={{ textAlign: 'center' }}>
           <div style={{ fontSize: '13px', color: '#38bdf8', marginBottom: '12px', fontWeight: 600, fontFamily: '"Fira Code", monospace' }}>
-            📄 {previewImage?.title}
+            {previewImage?.title}
           </div>
           <img
             src={previewImage?.url}

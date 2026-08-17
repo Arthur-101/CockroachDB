@@ -22,14 +22,14 @@ def run_test():
     print("Starting client...")
     success = client.start()
     if not success:
-        print("❌ Client start failed!")
+        print("[FAIL] Client start failed!")
         sys.exit(1)
         
-    print(f"🟢 Client started successfully. Status: {client.status}")
+    print(f"[OK] Client started successfully. Status: {client.status}")
     print(f"Discovered Tools catalog: {client.tools}")
     
     if len(client.tools) == 0:
-        print("❌ No tools discovered!")
+        print("[FAIL] No tools discovered!")
         client.stop()
         sys.exit(1)
         
@@ -40,9 +40,9 @@ def run_test():
     # Verify response
     content = res.get("content", [])
     if len(content) > 0 and content[0].get("text") == "Echo: Hello World!":
-        print("✅ Tool call response matches expected Echo string!")
+        print("[SUCCESS] Tool call response matches expected Echo string!")
     else:
-        print("❌ Unexpected tool call response!")
+        print("[FAIL] Unexpected tool call response!")
         client.stop()
         sys.exit(1)
         
@@ -52,7 +52,7 @@ def run_test():
         
     print("Stopping client...")
     client.stop()
-    print("🟢 Client stopped cleanly.")
+    print("[OK] Client stopped cleanly.")
     print("=== All MCP Client Tests Passed ===")
 
 if __name__ == "__main__":

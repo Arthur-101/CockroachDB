@@ -460,7 +460,7 @@ class ProviderRouter:
                     return {
                         "success": False,
                         "error": "No Google AI Studio API Key found. Please add your Google AI Studio API key in Settings -> Models & API Keys.",
-                        "content": "⚠️ No Google AI Studio API Key found. Please add your Google AI Studio API key in Settings -> Models & API Keys (or set GEMINI_API_KEY in .env) to use Google AI Studio.",
+                        "content": "[ERROR] No Google AI Studio API Key found. Please add your Google AI Studio API key in Settings -> Models & API Keys (or set GEMINI_API_KEY in .env) to use Google AI Studio.",
                         "model_id": f"google/{clean_model}"
                     }
                 return await self._generate_google_direct(messages, clean_model, api_key, temperature, max_tokens, tools)
@@ -471,7 +471,7 @@ class ProviderRouter:
                     return {
                         "success": False,
                         "error": "No OpenAI API Key found. Please add your OpenAI API key in Settings -> Models & API Keys.",
-                        "content": "⚠️ No OpenAI API Key found. Please add your OpenAI API key in Settings -> Models & API Keys (or set OPENAI_API_KEY in .env) to use OpenAI.",
+                        "content": "[ERROR] No OpenAI API Key found. Please add your OpenAI API key in Settings -> Models & API Keys (or set OPENAI_API_KEY in .env) to use OpenAI.",
                         "model_id": f"openai/{clean_model}"
                     }
                 return await self._generate_openai_direct(messages, clean_model, api_key, temperature, max_tokens, tools)
@@ -482,7 +482,7 @@ class ProviderRouter:
                     return {
                         "success": False,
                         "error": "No Anthropic API Key found. Please add your Anthropic API key in Settings -> Models & API Keys.",
-                        "content": "⚠️ No Anthropic API Key found. Please add your Anthropic API key in Settings -> Models & API Keys (or set ANTHROPIC_API_KEY in .env) to use Anthropic.",
+                        "content": "[ERROR] No Anthropic API Key found. Please add your Anthropic API key in Settings -> Models & API Keys (or set ANTHROPIC_API_KEY in .env) to use Anthropic.",
                         "model_id": f"anthropic/{clean_model}"
                     }
                 return await self._generate_anthropic_direct(messages, clean_model, api_key, temperature, max_tokens, tools)
@@ -493,7 +493,7 @@ class ProviderRouter:
                     return {
                         "success": False,
                         "error": "No Groq API Key found. Please add your Groq API key in Settings -> Models & API Keys.",
-                        "content": "⚠️ No Groq API Key found. Please add your Groq API key in Settings -> Models & API Keys (or set GROQ_API_KEY in .env) to use Groq.",
+                        "content": "[ERROR] No Groq API Key found. Please add your Groq API key in Settings -> Models & API Keys (or set GROQ_API_KEY in .env) to use Groq.",
                         "model_id": f"groq/{clean_model}"
                     }
                 return await self._generate_groq_direct(messages, clean_model, api_key, temperature, max_tokens, tools)
@@ -504,7 +504,7 @@ class ProviderRouter:
                     return {
                         "success": False,
                         "error": "No Mistral API Key found. Please add your Mistral API key in Settings -> Models & API Keys.",
-                        "content": "⚠️ No Mistral API Key found. Please add your Mistral API key in Settings -> Models & API Keys (or set MISTRAL_API_KEY in .env) to use Mistral AI.",
+                        "content": "[ERROR] No Mistral API Key found. Please add your Mistral API key in Settings -> Models & API Keys (or set MISTRAL_API_KEY in .env) to use Mistral AI.",
                         "model_id": f"mistral/{clean_model}"
                     }
                 return await self._generate_mistral_direct(messages, clean_model, api_key, temperature, max_tokens, tools)
@@ -515,7 +515,7 @@ class ProviderRouter:
                     return {
                         "success": False,
                         "error": "No AWS Bedrock credentials found. Please add them in Settings or set AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY in .env.",
-                        "content": "⚠️ No AWS Bedrock credentials found. Please configure AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and AWS_REGION to use Bedrock.",
+                        "content": "[ERROR] No AWS Bedrock credentials found. Please configure AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and AWS_REGION to use Bedrock.",
                         "model_id": f"bedrock/{clean_model}"
                     }
                 return await self._generate_bedrock_direct(messages, clean_model, credentials, temperature, max_tokens)
@@ -524,7 +524,7 @@ class ProviderRouter:
                 return {
                     "success": False,
                     "error": f"Unsupported provider: {provider_name}.",
-                    "content": f"⚠️ Unsupported provider [{provider_name}] requested for model: {clean_model}.",
+                    "content": f"[ERROR] Unsupported provider [{provider_name}] requested for model: {clean_model}.",
                     "model_id": model_id
                 }
 
@@ -532,7 +532,7 @@ class ProviderRouter:
         for attempt in range(1, max_attempts + 1):
             res = await _execute_single_attempt()
             if res.get("success", False):
-                print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] ✅ Response received from [{provider_name.upper()}] {clean_model} (Tokens: {res.get('tokens_used', 0)})")
+                print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] [SUCCESS] Response received from [{provider_name.upper()}] {clean_model} (Tokens: {res.get('tokens_used', 0)})")
                 return res
 
             err_msg = str(res.get("error", "")).lower()
@@ -542,7 +542,7 @@ class ProviderRouter:
 
             is_rate_limit = any(k in err_msg for k in ["429", "rate limit", "rate_limit", "quota", "exhausted", "resource_exhaustion"])
             if is_rate_limit and attempt < max_attempts:
-                print(f"⚠️ [{provider_name.upper()}] [429 Rate Limit/Quota Exceeded] hit. Retrying in 10 seconds (Attempt {attempt}/{max_attempts})...", file=sys.stderr, flush=True)
+                print(f"[WARNING] [{provider_name.upper()}] [429 Rate Limit/Quota Exceeded] hit. Retrying in 10 seconds (Attempt {attempt}/{max_attempts})...", file=sys.stderr, flush=True)
                 await asyncio.sleep(10)
             else:
                 # Non-rate-limit error or final attempt failed — return error directly (no fallback)

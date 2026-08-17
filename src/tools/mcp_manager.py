@@ -372,41 +372,78 @@ class HttpMcpClient:
                 token_str = str(token).strip()
                 headers["Authorization"] = token_str if token_str.lower().startswith("bearer ") else f"Bearer {token_str}"
 
-        self.log(f"Opening SSE client connection to {self.url}...")
+        self.log(f"Opening connection to {self.url}...")
         try:
-            async with sse_client(self.url, headers=headers) as (read_stream, write_stream):
-                async with ClientSession(read_stream, write_stream) as session:
-                    await session.initialize()
-                    self._session = session
-                    
-                    mcp_tools = await session.list_tools()
-                    tools_list = []
-                    for t in mcp_tools.tools:
-                        t_dict = t.model_dump() if hasattr(t, "model_dump") else t.dict()
-                        if "input_schema" in t_dict:
-                            t_dict["inputSchema"] = t_dict.pop("input_schema")
-                        tools_list.append(t_dict)
+            # Check whether to use Streamable HTTP (default for remote endpoints like CockroachDB Cloud MCP)
+            use_streamable = True
+            if "sse" in getattr(self, "command", "").lower() and "cockroach" not in self.name.lower():
+                use_streamable = False
+
+            if use_streamable:
+                from mcp.client.streamable_http import streamable_http_client, create_mcp_http_client
+                http_client = create_mcp_http_client(headers=headers)
+                async with streamable_http_client(self.url, http_client=http_client) as (read_stream, write_stream):
+                    async with ClientSession(read_stream, write_stream) as session:
+                        await session.initialize()
+                        self._session = session
                         
-                    self.tools = tools_list
-                    self.status = "Active"
-                    self.error_message = ""
-                    self.log(f"Connected to remote MCP server. Exposing {len(self.tools)} tools.")
-                    
-                    # Keep loop alive until self._running is set to False
-                    while self._running:
-                        await asyncio.sleep(0.5)
+                        mcp_tools = await session.list_tools()
+                        tools_list = []
+                        for t in mcp_tools.tools:
+                            t_dict = t.model_dump() if hasattr(t, "model_dump") else t.dict()
+                            if "input_schema" in t_dict:
+                                t_dict["inputSchema"] = t_dict.pop("input_schema")
+                            tools_list.append(t_dict)
+                            
+                        self.tools = tools_list
+                        self.status = "Active"
+                        self.error_message = ""
+                        self.log(f"Connected to remote MCP server. Exposing {len(self.tools)} tools.")
+                        
+                        while self._running:
+                            await asyncio.sleep(0.5)
+            else:
+                async with sse_client(self.url, headers=headers) as (read_stream, write_stream):
+                    async with ClientSession(read_stream, write_stream) as session:
+                        await session.initialize()
+                        self._session = session
+                        
+                        mcp_tools = await session.list_tools()
+                        tools_list = []
+                        for t in mcp_tools.tools:
+                            t_dict = t.model_dump() if hasattr(t, "model_dump") else t.dict()
+                            if "input_schema" in t_dict:
+                                t_dict["inputSchema"] = t_dict.pop("input_schema")
+                            tools_list.append(t_dict)
+                            
+                        self.tools = tools_list
+                        self.status = "Active"
+                        self.error_message = ""
+                        self.log(f"Connected to remote MCP server. Exposing {len(self.tools)} tools.")
+                        
+                        while self._running:
+                            await asyncio.sleep(0.5)
         except Exception as e:
             err_str = str(e)
             if "401" in err_str or "Unauthorized" in err_str:
                 self.error_message = (
                     "401 Unauthorized: CockroachDB Cloud MCP requires a Cockroach Cloud API key. "
-                    "Generate one in Cockroach Cloud Console -> Access Management -> Service Accounts/API Keys, "
-                    "then add 'COCKROACH_MCP_API_KEY=...' to .env or 'Authorization: Bearer <key>' in the MCP configuration."
+                    "Add 'COCKROACH_MCP_API_KEY=...' in .env or 'Authorization: Bearer <key>' in headers."
+                )
+            elif "405" in err_str:
+                self.error_message = (
+                    "405 Method Not Allowed: Endpoint expects Streamable HTTP POST transport. "
+                    "Ensure MCP command is set to 'http'."
+                )
+            elif "Server returned an error response" in err_str or "MCPError" in type(e).__name__:
+                self.error_message = (
+                    "Authentication token required: Add 'COCKROACH_MCP_API_KEY=...' in .env "
+                    "or 'Authorization: Bearer <key>' in the MCP server configuration."
                 )
             else:
                 self.error_message = err_str
             self.status = "Error"
-            self.log(f"SSE connection failed: {self.error_message}")
+            self.log(f"Connection failed: {self.error_message}")
 
     def call_tool(self, name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         if not self._running or not self._session:

@@ -51,15 +51,15 @@ class FileExplorerTool:
                         
                         prefix = "  " * (current_depth - 1)
                         if item.is_dir():
-                            lines.append(f"{prefix}📁 {item.name}/")
+                            lines.append(f"{prefix}[DIR]  {item.name}/")
                             lines.extend(_build_tree(item, current_depth + 1))
                         else:
-                            lines.append(f"{prefix}📄 {item.name}")
+                            lines.append(f"{prefix}[FILE] {item.name}")
                 except Exception as e:
                     lines.append(f"{prefix}[Error reading dir: {str(e)}]")
                 return lines
 
-            tree_lines = [f"📂 {os.path.basename(target_dir)}/"]
+            tree_lines = [f"[ROOT] {os.path.basename(target_dir)}/"]
             tree_lines.extend(_build_tree(Path(target_dir), 1))
             
             return {

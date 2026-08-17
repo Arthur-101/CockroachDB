@@ -61,8 +61,14 @@ class CockroachMemoryStore:
             if self._conn is None or self._conn.closed:
                 self._conn = _get_conn()
         except Exception as e:
-            print(f"⚠️  CockroachDB connection error: {e}")
+            print(f"[WARNING] CockroachDB connection error: {e}")
             raise
+
+    @property
+    def connection(self) -> psycopg2.extensions.connection:
+        """Expose raw psycopg2 connection for compatibility."""
+        self._ensure_connected()
+        return self._conn
 
     def _cursor(self) -> psycopg2.extras.RealDictCursor:
         self._ensure_connected()
@@ -1216,5 +1222,5 @@ SQLiteMemoryStore = CockroachMemoryStore
 try:
     memory_store = CockroachMemoryStore()
 except Exception as _e:
-    print(f"⚠️  Could not initialise CockroachMemoryStore at import time: {_e}")
+    print(f"[WARNING] Could not initialise CockroachMemoryStore at import time: {_e}")
     memory_store = None  # type: ignore[assignment]

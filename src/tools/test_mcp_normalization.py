@@ -41,7 +41,7 @@ def run_test():
     assert result.get("success") is True, "Success should be True"
     assert "result" in result, "Result key should exist"
     assert result.get("message") == '{"object": "list", "results": [{"id": "page-123"}]}', "Message should match text content"
-    print("✅ MCP Tool response normalization successfully verified!")
+    print("[SUCCESS] MCP Tool response normalization successfully verified!")
 
 if __name__ == "__main__":
     run_test()

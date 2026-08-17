@@ -276,22 +276,28 @@ class ChatRouter:
         recent_summaries = []
         if use_summaries:
             # Fetch unique summaries to provide broad context without confusing the model
-            cursor = self.memory_store.connection.cursor()
-            cursor.execute("""
-            SELECT DISTINCT content_summary
-            FROM (
-                SELECT content_summary, MIN(created_at) as first_created
-                FROM messages
-                WHERE session_id = ? AND content_summary IS NOT NULL
-                GROUP BY content_summary
-                ORDER BY first_created DESC
-                LIMIT 3
-            )
-            ORDER BY first_created ASC
-            """, (session_id,))
-            rows = cursor.fetchall()
-            summaries = [row["content_summary"] for row in rows]
-            recent_summaries = [{"content_summary": s} for s in summaries]
+            try:
+                if hasattr(self.memory_store, "get_recent_summaries"):
+                    recent_summaries = self.memory_store.get_recent_summaries(session_id, limit=3)
+                else:
+                    cur = self.memory_store.connection.cursor()
+                    cur.execute("""
+                    SELECT DISTINCT content_summary
+                    FROM (
+                        SELECT content_summary, MIN(created_at) as first_created
+                        FROM messages
+                        WHERE session_id = %s AND content_summary IS NOT NULL
+                        GROUP BY content_summary
+                        ORDER BY first_created DESC
+                        LIMIT 3
+                    )
+                    ORDER BY first_created ASC
+                    """, (session_id,))
+                    rows = cur.fetchall()
+                    summaries = [row["content_summary"] for row in rows]
+                    recent_summaries = [{"content_summary": s} for s in summaries]
+            except Exception as e:
+                logger.debug(f"Could not retrieve recent summaries: {e}")
             
             if summaries:
                 summary_text = "\n".join(f"- {s}" for s in summaries)
@@ -469,7 +475,7 @@ class ChatRouter:
             if not key:
                 prov_disp = "Google AI Studio" if prov_prefix in ["google", "gemini"] else "Mistral AI" if prov_prefix == "mistral" else prov_prefix.capitalize()
                 return {
-                    "content": f"⚠️ No {prov_disp} API Key registered. Please add your {prov_disp} API key in Settings -> Models & API Keys to use {prov_disp} directly.",
+                    "content": f"[WARNING] No {prov_disp} API Key registered. Please add your {prov_disp} API key in Settings -> Models & API Keys to use {prov_disp} directly.",
                     "model_id": target_model,
                     "tokens_used": 0
                 }
@@ -581,7 +587,7 @@ class ChatRouter:
                         if media_files:
                             arguments["file_paths"] = list(set(media_files))
                         
-                    print(f"🔧 Agent executing tool: {name} with args {arguments}")
+                    print(f"[TOOL] Agent executing tool: {name} with args {arguments}")
                     # Run synchronous tools in a thread pool to avoid blocking the asyncio event loop
                     tool_result = await asyncio.to_thread(self.tool_manager.execute_tool, name, arguments)
                     
@@ -651,7 +657,7 @@ class ChatRouter:
                         import sys
                         from datetime import datetime
                         current_time = datetime.now().strftime("%H:%M:%S")
-                        print(f"[{current_time}] 🔧 Tool completed: {name} | Status: {'Success' if tool_result.get('success') else 'Failed'}", file=sys.stderr, flush=True)
+                        print(f"[{current_time}] [TOOL] Completed: {name} | Status: {'Success' if tool_result.get('success') else 'Failed'}", file=sys.stderr, flush=True)
                         
                         try:
                             args_str = json.dumps(arguments, indent=2)
@@ -672,7 +678,7 @@ class ChatRouter:
                             result_disp = result_disp[:4000] + "\n... [truncated for UI]"
                             
                         log_msg = {
-                            "content": f"🔧 **Tool Call**: `{name}`\n\n**Arguments**:\n```json\n{args_str}\n```\n\n**Result**:\n```text\n{result_disp}\n```",
+                            "content": f"**Tool Call**: `{name}`\n\n**Arguments**:\n```json\n{args_str}\n```\n\n**Result**:\n```text\n{result_disp}\n```",
                             "model": f"Tool: {name}"
                         }
                         print(f"SUB_AGENT_MSG:{json.dumps(log_msg)}", file=sys.stderr, flush=True)
@@ -694,7 +700,7 @@ class ChatRouter:
                     ))
                 
                 # After appending all tool results, loop repeats to get next assistant response
-                print(f"🔄 Tool execution complete. Requesting final answer...", file=sys.stderr, flush=True)
+                print(f"[AGENT] Tool execution complete. Requesting final answer...", file=sys.stderr, flush=True)
 
                 
             except Exception as e:
@@ -736,19 +742,20 @@ class ChatRouter:
     async def _summarize_messages(self, user_msg_id: str, assistant_msg_id: str):
         """Summarize messages asynchronously."""
         try:
-            cursor = self.memory_store.connection.cursor()
-            cursor.execute(
-                "SELECT content_raw FROM messages WHERE id IN (?, ?)",
+            cur = self.memory_store._cursor() if hasattr(self.memory_store, "_cursor") else self.memory_store.connection.cursor()
+            param_placeholder = "%s" if hasattr(self.memory_store, "_cursor") else "?"
+            cur.execute(
+                f"SELECT content_raw FROM messages WHERE id IN ({param_placeholder}, {param_placeholder})",
                 (user_msg_id, assistant_msg_id)
             )
-            rows = cursor.fetchall()
+            rows = cur.fetchall()
             
             if len(rows) == 2:
                 user_content = rows[0]["content_raw"]
                 assistant_content = rows[1]["content_raw"]
                 
                 combined = f"User: {user_content}\nAssistant: {assistant_content}"
-                summary_model = self._get_assigned_model_for_role("summary", "openrouter:qwen/qwen3.5-flash-02-23")
+                summary_model = self._get_assigned_model_for_role("summary", "google:gemini-2.0-flash")
                 
                 summary = await self.client.summarize_content(
                     content=combined,
@@ -765,7 +772,7 @@ class ChatRouter:
     async def _extract_and_save_facts(self, user_message: str, tags: List[str]):
         """Extract factual memories, consolidate with existing memories, and auto-update."""
         try:
-            summary_model = self._get_assigned_model_for_role("summary", "openrouter:qwen/qwen3.5-flash-02-23")
+            summary_model = self._get_assigned_model_for_role("summary", "google:gemini-2.0-flash")
             facts = await self.client.extract_memory_facts(user_message, model_id=summary_model)
             if not facts:
                 return
@@ -780,16 +787,16 @@ class ChatRouter:
                     if content:
                         memory_id = self.memory_store.save_user_memory(content, tags)
                         self.vector_store.add_user_memory(memory_id, content)
-                        print(f"🧠 Memory Added: {content}")
+                        print(f"[MEMORY] Added: {content}")
                 elif act == "update":
                     m_id = item.get("memory_id")
                     content = item.get("content")
                     if m_id and content:
                         self.memory_store.update_user_memory(m_id, content)
                         self.vector_store.update_user_memory(m_id, content)
-                        print(f"🧠 Memory Auto-Updated [{m_id}]: {content}")
+                        print(f"[MEMORY] Auto-Updated [{m_id}]: {content}")
                 elif act == "skip":
-                    print("🧠 Memory Skipped (Already exists)")
+                    print("[MEMORY] Skipped (Already exists)")
         except Exception as e:
             print(f"Error extracting and consolidating facts: {e}")
 

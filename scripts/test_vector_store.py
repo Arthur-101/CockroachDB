@@ -36,9 +36,9 @@ def run():
     print("\n[2] Testing user memory semantic search...")
     res = vstore.search_user_memories('What programming language does Saurav like?', limit=1)
     if res:
-        print(f"✅ Found match: {res[0]['content']} (distance: {res[0]['distance']})")
+        print(f"[SUCCESS] Found match: {res[0]['content']} (distance: {res[0]['distance']})")
     else:
-        print("❌ No matches found!")
+        print("[FAIL] No matches found!")
         sys.exit(1)
 
     # Test 3: add document chunks
@@ -56,13 +56,13 @@ def run():
     print("\n[4] Testing document semantic search...")
     docs = vstore.search_documents('How to resolve high CPU in payment API?', limit=2)
     if docs:
-        print("✅ Found document matches:")
+        print("[SUCCESS] Found document matches:")
         for doc in docs:
             print(f" - Content: {doc['content']}")
             print(f"   Metadata: {doc['metadata']}")
             print(f"   Distance: {doc['distance']}")
     else:
-        print("❌ No document matches found!")
+        print("[FAIL] No document matches found!")
         sys.exit(1)
 
     # Test 5: add message
@@ -74,9 +74,9 @@ def run():
     print("\n[6] Testing similar message semantic search...")
     msgs = vstore.search_similar_messages('port for CockroachDB', session_id='test-session', limit=1)
     if msgs:
-        print(f"✅ Found message: {msgs[0]['content']} (distance: {msgs[0]['distance']})")
+        print(f"[SUCCESS] Found message: {msgs[0]['content']} (distance: {msgs[0]['distance']})")
     else:
-        print("❌ No similar messages found!")
+        print("[FAIL] No similar messages found!")
         sys.exit(1)
 
     # Cleanup test records
@@ -89,7 +89,7 @@ def run():
     cur.execute("DELETE FROM messages WHERE id = 'test-msg-1';")
     conn.close()
 
-    print("\n🎉 All CockroachDB VectorMemoryStore tests passed successfully!")
+    print("\n[SUCCESS] All CockroachDB VectorMemoryStore tests passed successfully!")
     vstore.close()
 
 if __name__ == "__main__":

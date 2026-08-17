@@ -45,7 +45,7 @@ class ConsensusAggregator:
             return {"content": "No sub-agent outputs available to aggregate.", "tokens_used": 0}
             
         target_model = self._get_synthesizer_model()
-        print(f"🧩 Synthesizing sub-agent team consensus using {target_model}...", file=sys.stderr, flush=True)
+        print(f"[SYNTHESIZER] Synthesizing sub-agent team consensus using {target_model}...", file=sys.stderr, flush=True)
         
         # Prepare sub-agent content payload
         formatted_inputs = []
@@ -60,12 +60,12 @@ class ConsensusAggregator:
         team_payload = "\n---\n".join(formatted_inputs)
         
         system_prompt = (
-            "You are the 🧩 Master Consensus Synthesizer for a Multi-Model AI Agent Team.\n"
+            "You are the Master Consensus Synthesizer for a Multi-Model AI Agent Team.\n"
             "The team worked in a sequential relay pipeline:\n"
-            "  1. 💡 Reasoning Agent analysed the problem and produced an architectural plan.\n"
-            "  2. 🤖 Coding Agent received that plan and implemented it.\n"
-            "  3. 💡 Reasoning Agent optionally reviewed the code for correctness.\n"
-            "  4. 👁️ Multimodal Specialist (if present) analysed any attachments.\n\n"
+            "  1. Reasoning Agent analysed the problem and produced an architectural plan.\n"
+            "  2. Coding Agent received that plan and implemented it.\n"
+            "  3. Reasoning Agent optionally reviewed the code for correctness.\n"
+            "  4. Multimodal Specialist (if present) analysed any attachments.\n\n"
             "YOUR TASK:\n"
             "1. Produce ONE cohesive, professional master response.\n"
             "2. Start with any key architectural insight from the Reasoning Agent (1-2 short paragraphs).\n"
@@ -101,7 +101,7 @@ class ConsensusAggregator:
         except Exception as e:
             logger.error(f"Error during consensus synthesis: {e}")
             # Fallback: concatenate sub-agent outputs cleanly
-            concat_output = "## 🤝 Multi-Model Team Output\n\n"
+            concat_output = "## Multi-Model Team Output\n\n"
             for res in sub_agent_results:
                 concat_output += f"### {res.get('role', 'Worker').title()} ({res.get('model_id')})\n{res.get('content')}\n\n"
             return {

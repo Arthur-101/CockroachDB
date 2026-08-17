@@ -247,7 +247,7 @@ INCIDENT_LOGS = {
 
 
 def main():
-    print("🪣 Seeding S3 knowledge base: cockroachsre-knowledge-base")
+    print("[INFO] Seeding S3 knowledge base: cockroachsre-knowledge-base")
     print("=" * 60)
 
     kb = S3KnowledgeBase()
@@ -256,33 +256,33 @@ def main():
     # Test connection first
     conn = kb.test_connection()
     if not conn["success"]:
-        print(f"❌ S3 connection failed: {conn['error']}")
+        print(f"[ERROR] S3 connection failed: {conn['error']}")
         sys.exit(1)
-    print(f"✅ S3 Connected: {conn['message']}\n")
+    print(f"[SUCCESS] S3 Connected: {conn['message']}\n")
 
     # Upload runbooks
-    print("📚 Uploading runbooks...")
+    print("[INFO] Uploading runbooks...")
     for name, content in RUNBOOKS.items():
         result = kb.upload_runbook(name, content)
         if result["success"]:
             # Index into CockroachDB
             idx = kb.fetch_and_index(result["s3_key"], vector_store=vs)
-            status = "✅ uploaded + indexed" if idx.get("indexed") else "⚠️ uploaded (index failed)"
+            status = "[OK] uploaded + indexed" if idx.get("indexed") else "[WARNING] uploaded (index failed)"
         else:
-            status = f"❌ failed: {result.get('error')}"
+            status = f"[ERROR] failed: {result.get('error')}"
         print(f"  {name:45s} {status}")
 
     print()
 
     # Upload incident logs
-    print("🚨 Uploading incident logs...")
+    print("[INFO] Uploading incident logs...")
     for incident_id, content in INCIDENT_LOGS.items():
         result = kb.upload_incident_log(incident_id, content)
         if result["success"]:
             idx = kb.fetch_and_index(result["s3_key"], vector_store=vs)
-            status = "✅ uploaded + indexed" if idx.get("indexed") else "⚠️ uploaded (index failed)"
+            status = "[OK] uploaded + indexed" if idx.get("indexed") else "[WARNING] uploaded (index failed)"
         else:
-            status = f"❌ failed: {result.get('error')}"
+            status = f"[ERROR] failed: {result.get('error')}"
         print(f"  {incident_id:45s} {status}")
 
     print()
@@ -290,8 +290,8 @@ def main():
 
     # Final summary
     summary = kb.list_all()
-    print(f"✅ S3 bucket now has {summary['count']} objects")
-    print("✅ All content indexed into CockroachDB pgvector store")
+    print(f"[SUCCESS] S3 bucket now has {summary['count']} objects")
+    print("[SUCCESS] All content indexed into CockroachDB pgvector store")
     print()
     print("Pipeline verified:")
     print("  Amazon S3 (cockroachsre-knowledge-base)")

@@ -681,11 +681,11 @@ pub fn run() {
         })
         .setup(|app| {
             let tray_result = (|| -> tauri::Result<()> {
-                let status_i = tauri::menu::MenuItem::with_id(app, "status", "🟢 AgenticAI (Engine Active)", false, None::<&str>)?;
-                let show_i = tauri::menu::MenuItem::with_id(app, "show", "🖥️  Show Studio Window", true, None::<&str>)?;
-                let new_chat_i = tauri::menu::MenuItem::with_id(app, "new_chat", "➕  Start New Chat", true, None::<&str>)?;
-                let toggle_i = tauri::menu::MenuItem::with_id(app, "toggle_engine", "⚡  Toggle AI Engine", true, None::<&str>)?;
-                let quit_i = tauri::menu::MenuItem::with_id(app, "quit", "❌  Quit AgenticAI", true, None::<&str>)?;
+                let status_i = tauri::menu::MenuItem::with_id(app, "status", "CockroachSRE (Engine Active)", false, None::<&str>)?;
+                let show_i = tauri::menu::MenuItem::with_id(app, "show", "Show Studio Window", true, None::<&str>)?;
+                let new_chat_i = tauri::menu::MenuItem::with_id(app, "new_chat", "Start New Chat", true, None::<&str>)?;
+                let toggle_i = tauri::menu::MenuItem::with_id(app, "toggle_engine", "Toggle AI Engine", true, None::<&str>)?;
+                let quit_i = tauri::menu::MenuItem::with_id(app, "quit", "Quit CockroachSRE", true, None::<&str>)?;
 
                 let sep1 = tauri::menu::PredefinedMenuItem::separator(app)?;
                 let sep2 = tauri::menu::PredefinedMenuItem::separator(app)?;

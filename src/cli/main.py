@@ -351,9 +351,9 @@ def show_stats():
     # Warning if near limit
     total_cost = cost_summary.get("total_cost", 0)
     if total_cost >= config.settings.cost_limit:
-        console.print(f"[bold red]⚠️  COST LIMIT EXCEEDED: ${total_cost:.2f}[/bold red]")
+        console.print(f"[bold red][WARNING] COST LIMIT EXCEEDED: ${total_cost:.2f}[/bold red]")
     elif total_cost >= config.settings.cost_warning_threshold:
-        console.print(f"[bold yellow]⚠️  Cost warning: ${total_cost:.2f}[/bold yellow]")
+        console.print(f"[bold yellow][WARNING] Cost warning: ${total_cost:.2f}[/bold yellow]")
     
     memory_store.close()
 

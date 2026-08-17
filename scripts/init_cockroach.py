@@ -10,7 +10,7 @@ load_dotenv()
 COCKROACH_URL = os.getenv("COCKROACH_DATABASE_URL")
 
 if not COCKROACH_URL:
-    print("❌ COCKROACH_DATABASE_URL is not set in .env!")
+    print("[ERROR] COCKROACH_DATABASE_URL is not set in .env!")
     sys.exit(1)
 
 print(f"Connecting to database at: {COCKROACH_URL.split('@')[-1]}")
@@ -19,7 +19,7 @@ try:
     import psycopg2
     from psycopg2.extras import RealDictCursor
 except ImportError:
-    print("❌ psycopg2-binary not installed in active environment! Run pip install psycopg2-binary")
+    print("[ERROR] psycopg2-binary not installed in active environment! Run pip install psycopg2-binary")
     sys.exit(1)
 
 def init_db():
@@ -29,15 +29,15 @@ def init_db():
         cursor = conn.cursor()
 
         # Step 1: Enable vector extension (supported natively on CockroachDB Serverless)
-        print("🔧 Enabling vector extension...")
+        print("[INFO] Enabling vector extension...")
         try:
             cursor.execute("CREATE EXTENSION IF NOT EXISTS vector;")
-            print("✅ Vector extension enabled successfully.")
+            print("[INFO] Vector extension enabled successfully.")
         except Exception as e:
-            print(f"⚠️ Vector extension creation warning: {e} (This is normal if already enabled or if permissions are restricted, proceeding...)")
+            print(f"[WARNING] Vector extension creation warning: {e} (This is normal if already enabled or if permissions are restricted, proceeding...)")
 
         # Step 2: Create Core AgenticAI tables (migrating from SQLite)
-        print("🧱 Creating Core AgenticAI tables...")
+        print("[INFO] Creating Core AgenticAI tables...")
         
         # Conversations Table
         cursor.execute("""
@@ -156,7 +156,7 @@ def init_db():
         """)
 
         # Step 3: Create Custom SRE/DevOps brain tables
-        print("🧱 Creating Custom SRE/DevOps tables...")
+        print("[INFO] Creating Custom SRE/DevOps tables...")
 
         # SRE Incidents Table
         cursor.execute("""
@@ -201,7 +201,7 @@ def init_db():
         """)
 
         # Step 4: Create performance indexes
-        print("⚡ Creating database indexes...")
+        print("[INFO] Creating database indexes...")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_conversations_session ON conversations(session_id);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_conversations_created ON conversations(created_at);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id);")
@@ -212,15 +212,15 @@ def init_db():
         # Step 5: Test connection with a basic query
         cursor.execute("SELECT version();")
         db_version = cursor.fetchone()
-        print(f"🎉 Successfully connected to CockroachDB!")
-        print(f"💻 DB Version: {db_version[0]}")
+        print(f"[INFO] Successfully connected to CockroachDB!")
+        print(f"[INFO] DB Version: {db_version[0]}")
 
         cursor.close()
         conn.close()
-        print("✅ Database initialization completed successfully!")
+        print("[SUCCESS] Database initialization completed successfully!")
 
     except Exception as e:
-        print(f"❌ Error initializing CockroachDB: {e}")
+        print(f"[ERROR] Error initializing CockroachDB: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":
