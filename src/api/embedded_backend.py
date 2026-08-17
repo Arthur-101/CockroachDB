@@ -24,7 +24,7 @@ class EmbeddedBackend:
     """Minimal backend that handles JSON-RPC requests via stdin/stdout."""
     
     def __init__(self):
-        self.memory = SQLiteMemoryStore(db_path=config.settings.sqlite_db_path)
+        self.memory = SQLiteMemoryStore()
         self.router = ChatRouter(
             memory_store=self.memory
         )
@@ -110,6 +110,19 @@ class EmbeddedBackend:
                 return self._handle_save_runbook(params)
             elif method == "get_fix_history":
                 return self._handle_get_fix_history(params)
+            # --- Amazon S3 Knowledge Base ---
+            elif method == "s3_test_connection":
+                return await self._handle_s3_test_connection()
+            elif method == "s3_list_all":
+                return await self._handle_s3_list_all(params)
+            elif method == "s3_upload_runbook":
+                return await self._handle_s3_upload_runbook(params)
+            elif method == "s3_fetch_runbook":
+                return await self._handle_s3_fetch_runbook(params)
+            elif method == "s3_sync_to_cockroachdb":
+                return await self._handle_s3_sync_to_cockroachdb(params)
+            elif method == "s3_upload_incident":
+                return await self._handle_s3_upload_incident(params)
             else:
                 return {
                     "jsonrpc": "2.0",
@@ -804,6 +817,116 @@ async def main_async():
                 "id": None
             }
             print(json.dumps(error_response), file=original_stdout, flush=True)
+
+
+    # ==================================================================
+    # Amazon S3 Knowledge Base handlers
+    # ==================================================================
+
+    async def _handle_s3_test_connection(self) -> Dict[str, Any]:
+        """Test S3 bucket connectivity."""
+        import asyncio
+        from src.tools.s3_tools import s3_kb
+        result = await asyncio.get_event_loop().run_in_executor(None, s3_kb.test_connection)
+        return {"jsonrpc": "2.0", "result": result, "id": None}
+
+    async def _handle_s3_list_all(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """List all objects in the S3 knowledge base bucket."""
+        import asyncio
+        from src.tools.s3_tools import s3_kb
+        prefix = params.get("prefix", "")
+        result = await asyncio.get_event_loop().run_in_executor(
+            None, lambda: s3_kb._list_prefix(prefix)
+        )
+        return {"jsonrpc": "2.0", "result": result, "id": None}
+
+    async def _handle_s3_upload_runbook(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Upload a runbook to S3 and optionally index it into CockroachDB."""
+        import asyncio
+        from src.tools.s3_tools import s3_kb
+        name = params.get("name", "")
+        content = params.get("content", "")
+        auto_index = params.get("auto_index", True)
+        if not name or not content:
+            return {"jsonrpc": "2.0", "result": {"success": False, "error": "name and content required"}, "id": None}
+
+        upload_result = await asyncio.get_event_loop().run_in_executor(
+            None, lambda: s3_kb.upload_runbook(name, content)
+        )
+
+        index_result = None
+        if auto_index and upload_result.get("success"):
+            key = upload_result["s3_key"]
+            index_result = await asyncio.get_event_loop().run_in_executor(
+                None, lambda: s3_kb.fetch_and_index(key)
+            )
+
+        return {
+            "jsonrpc": "2.0",
+            "result": {
+                "upload": upload_result,
+                "index": index_result,
+                "message": f"Runbook '{name}' uploaded to S3 and indexed into CockroachDB." if index_result else f"Runbook '{name}' uploaded to S3."
+            },
+            "id": None
+        }
+
+    async def _handle_s3_fetch_runbook(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Fetch a runbook from S3 by name."""
+        import asyncio
+        from src.tools.s3_tools import s3_kb
+        name = params.get("name", "")
+        if not name:
+            return {"jsonrpc": "2.0", "result": {"success": False, "error": "name required"}, "id": None}
+        result = await asyncio.get_event_loop().run_in_executor(
+            None, lambda: s3_kb.fetch_runbook(name)
+        )
+        return {"jsonrpc": "2.0", "result": result, "id": None}
+
+    async def _handle_s3_sync_to_cockroachdb(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Sync all S3 objects into CockroachDB pgvector index.
+        This is the main S3 → CockroachDB pipeline trigger.
+        """
+        import asyncio
+        from src.tools.s3_tools import s3_kb
+        prefix = params.get("prefix", "")
+        limit = params.get("limit", 50)
+        result = await asyncio.get_event_loop().run_in_executor(
+            None, lambda: s3_kb.sync_to_vector_store(prefix=prefix, limit=limit)
+        )
+        return {"jsonrpc": "2.0", "result": result, "id": None}
+
+    async def _handle_s3_upload_incident(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Upload an incident log to S3 and index into CockroachDB."""
+        import asyncio
+        from src.tools.s3_tools import s3_kb
+        incident_id = params.get("incident_id", "")
+        content = params.get("content", "")
+        auto_index = params.get("auto_index", True)
+        if not incident_id or not content:
+            return {"jsonrpc": "2.0", "result": {"success": False, "error": "incident_id and content required"}, "id": None}
+
+        upload_result = await asyncio.get_event_loop().run_in_executor(
+            None, lambda: s3_kb.upload_incident_log(incident_id, content)
+        )
+
+        index_result = None
+        if auto_index and upload_result.get("success"):
+            key = upload_result["s3_key"]
+            index_result = await asyncio.get_event_loop().run_in_executor(
+                None, lambda: s3_kb.fetch_and_index(key)
+            )
+
+        return {
+            "jsonrpc": "2.0",
+            "result": {
+                "upload": upload_result,
+                "index": index_result,
+                "message": f"Incident '{incident_id}' uploaded to S3 and indexed into CockroachDB."
+            },
+            "id": None
+        }
 
 
 def main():

@@ -7,7 +7,7 @@
 - Always update the notion page for the planning and executed tasks too.
 - And also update the Notion page if required.
 
-# CockroachSRE — AI SRE Agent System (AWS Bedrock + CockroachDB Architecture)
+# CockroachSRE — AI SRE Agent System (Amazon S3 + CockroachDB Architecture)
 
 ## Project Overview
 CockroachSRE is an AI-powered SRE (Site Reliability Engineering) agent system developed for the CockroachDB × AWS Hackathon. It utilizes CockroachDB Cloud Serverless for memory storage and RAG vector searches, and AWS Bedrock (Claude 3.x) for reasoning, orchestration, and task execution.
@@ -169,7 +169,17 @@ data/
 - Windows background service via Tauri
 - CockroachDB cloud-managed MCP-style tool architecture
 
+### Amazon S3 Knowledge Base Integration (Aug 17, 2026):
+- **AWS Pivot**: AWS Bedrock replaced with Amazon S3 (`cockroachsre-knowledge-base`, `ap-south-1`) as the required AWS service. Reason: AWS account not verified for Bedrock after 5 days. S3 is a better architectural fit — it is the source of truth for runbooks/incident logs with a direct indexing pipeline into CockroachDB.
+- **S3 Knowledge Base Module (`src/tools/s3_tools.py`)**: Built `S3KnowledgeBase` class with `upload_runbook`, `upload_incident_log`, `upload_postmortem`, `fetch_runbook`, `fetch_object`, `list_runbooks`, `list_incident_logs`, `list_all`, `sync_to_vector_store`, `fetch_and_index`, and `test_connection`. Module-level `s3_kb` singleton. Credentials loaded from `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_REGION` env vars.
+- **S3 → CockroachDB Vector Pipeline**: `sync_to_vector_store()` and `fetch_and_index()` pull content from S3 and immediately embed+store it into CockroachDB's `documents` table via `VectorMemoryStore.add_document()`. This creates the full `S3 → CockroachDB pgvector → Agent semantic search` pipeline.
+- **Backend JSON-RPC Endpoints (`src/api/embedded_backend.py`)**: Added `s3_test_connection`, `s3_list_all`, `s3_upload_runbook`, `s3_fetch_runbook`, `s3_sync_to_cockroachdb`, `s3_upload_incident` routes and async handler methods using `run_in_executor` for non-blocking I/O.
+- **Seed Script (`scripts/seed_s3_runbooks.py`)**: Uploads 5 SRE runbooks (`db-connection-failures.md`, `high-cpu-playbook.md`, `memory-leak-detection.md`, `incident-response-sop.md`, `cockroachdb-backup-restore.md`) and 2 incident logs (`INC-2026-001`, `INC-2026-002`) to S3, then indexes all 7 objects into CockroachDB pgvector. **Successfully verified — 7 objects in S3, all indexed.**
+- **Env Config**: Added `S3_BUCKET_NAME=cockroachsre-knowledge-base` to `.env`. AWS credentials (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION=ap-south-1`) now serve both S3 and any future Bedrock use. IAM user has `AmazonS3FullAccess` policy attached.
+- **LLM Decision**: Agent brain is **Google Gemini 2.0 Flash** (free tier, 1500 req/day) configured via the existing UI API key input box in Settings. No AWS LLM required — the hackathon only requires at least 1 AWS service, not an AWS LLM.
+
 ### CockroachSRE Database, Vector Store, & Bedrock Purge:
+
 - **CockroachDB Memory Store Migration (`src/memory/cockroach_store.py`)**: Migrated raw SQLite store to a fully PostgreSQL-wire-compatible CockroachDB memory layer. Created standard indexes, mapped chat history, global memories, role assignments, api keys, and tool calls. Dropped foreign key constraints from `messages` to allow flexible context payloads.
 - **pgvector Vector Store Migration (`src/memory/vector_store.py`)**: Replaced local ChromaDB instance with an inline pgvector store. Added `embedding VECTOR(384)` columns directly to `documents`, `messages`, and `user_memories` tables to store and retrieve vectors with native database joins. Configured local `SentenceTransformer('all-MiniLM-L6-v2')` model to execute 384-dimensional cosine distance matches (`<=>`) with 100% zero-quota free local embeddings.
 - **OpenRouter Purge & AWS Bedrock Dispatcher (`src/models/provider_router.py`)**: Completely purged OpenRouter connection clients, endpoint configurations, and silent pass-through fallbacks. Configured direct `boto3` client Converse API integrations to support AWS Bedrock reasoning models (e.g. Claude 3.5 Sonnet v2) with automatic key credential parsing and dynamic region matching. Added `bedrock` provider controls directly to Tauri UI settings drawer.
