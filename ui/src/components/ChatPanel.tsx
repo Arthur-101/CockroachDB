@@ -12,7 +12,6 @@ import {
   CheckOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
-  RobotOutlined,
   PoweroffOutlined,
   SendOutlined,
   ClearOutlined,
@@ -891,7 +890,7 @@ export default function ChatPanel() {
         title={
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <SettingOutlined style={{ color: '#38bdf8' }} />
-            <span style={{ color: '#f8fafc', fontWeight: 600 }}>CockroachSRE Settings & Operations Manager</span>
+            <span style={{ color: '#f8fafc', fontWeight: 600 }}>AegisDB Settings & Operations Manager</span>
           </div>
         }
         open={isSettingsOpen}
@@ -1867,19 +1866,17 @@ export default function ChatPanel() {
           </Tooltip>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '16px', fontWeight: 700, color: '#f8fafc' }}>
-            <div style={{ 
-              width: 32, 
-              height: 32, 
-              borderRadius: 8, 
-              background: 'linear-gradient(135deg, #0284c7, #2563eb)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: '0 4px 12px rgba(37, 99, 235, 0.35)'
-            }}>
-              <RobotOutlined style={{ color: '#ffffff', fontSize: '18px' }} />
-            </div>
-            <span>CockroachSRE Studio</span>
+            <img 
+              src="/logo.svg" 
+              alt="AegisDB Logo" 
+              style={{ 
+                width: 28, 
+                height: 28, 
+                borderRadius: '6px',
+                filter: 'drop-shadow(0 2px 8px rgba(34, 211, 184, 0.35))'
+              }} 
+            />
+            <span style={{ fontWeight: 600, letterSpacing: '-0.2px' }}>AegisDB Studio</span>
             <span style={{ 
               fontSize: '11px', 
               fontWeight: 500, 
@@ -2380,7 +2377,7 @@ export default function ChatPanel() {
                 />
               </Tooltip>
               <Input.TextArea
-                placeholder="Message CockroachSRE..."
+                placeholder="Message AegisDB..."
                 value={input}
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={(e) => {
@@ -2421,7 +2418,7 @@ export default function ChatPanel() {
               </Button>
             </div>
             <div style={{ textAlign: 'center', marginTop: 8, color: '#64748b', fontSize: '11px' }}>
-              © 2026 CockroachSRE • Site Reliability Engineering Agent System • {backendRunning ? 'AI Ready' : 'AI Offline'}
+              © 2026 AegisDB • Autonomous Site Reliability Engineering Copilot • {backendRunning ? 'AI Ready' : 'AI Offline'}
             </div>
           </Footer>
         </Layout>

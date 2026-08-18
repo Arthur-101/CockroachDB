@@ -1,5 +1,6 @@
 {
-  "name": "tauri-app",
+  "name": "aegisdb",
+  "description": "AegisDB - Autonomous AI SRE Copilot for CockroachDB & AWS",
   "private": true,
   "version": "0.1.0",
   "type": "module",

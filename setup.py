@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Setup script for AgenticAI."""
+"""Setup script for AegisDB."""
 
 import os
 import sys
@@ -15,14 +15,14 @@ with open("README.md", encoding="utf-8") as f:
     long_description = f.read()
 
 setup(
-    name="agenticai",
+    name="aegisdb",
     version="0.1.0",
-    description="Multi-model AI agent system with OpenRouter APIs",
+    description="AegisDB: Autonomous AI SRE Copilot for CockroachDB & AWS",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    author="Your Name",
-    author_email="your.email@example.com",
-    url="https://github.com/yourusername/agenticai",
+    author="Arthur-101",
+    author_email="dev@aegisdb.io",
+    url="https://github.com/Arthur-101/CockroachDB",
     packages=find_packages(where="src"),
     package_dir={"": "src"},
     include_package_data=True,

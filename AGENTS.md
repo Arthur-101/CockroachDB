@@ -7,13 +7,13 @@
 - Always update the notion page for the planning and executed tasks too.
 - And also update the Notion page if required.
 
-# CockroachSRE — AI SRE Agent System (Amazon S3 + CockroachDB Architecture)
+# AegisDB — Autonomous AI SRE Copilot (Amazon S3 + CockroachDB Architecture)
 
 ## Project Overview
-CockroachSRE is an AI-powered SRE (Site Reliability Engineering) agent system developed for the CockroachDB × AWS Hackathon. It utilizes CockroachDB Cloud Serverless for memory storage and RAG vector searches, and AWS Bedrock (Claude 3.x) for reasoning, orchestration, and task execution.
+AegisDB is an intelligent, multi-model AI-powered SRE (Site Reliability Engineering) agent system developed for the CockroachDB × AWS Hackathon. It utilizes CockroachDB Cloud Serverless for relational memory storage and RAG vector searches (pgvector), and Amazon S3 as the authoritative knowledge base and runbook repository with automated embedding pipelines.
 
 ## Goal
-Create an intelligent SRE Assistant that runs continuously to monitor services, analyze logs, query CockroachDB performance statistics, suggest playbooks, and automate troubleshooting. The system supports semantic context retrieval, shared memory across sub-agents, local tool execution, and CockroachDB MCP server integration, completely bypassing OpenRouter in favor of direct provider integrations.
+Create an intelligent SRE Copilot that runs continuously to monitor services, analyze logs, query CockroachDB performance statistics, suggest playbooks, and automate troubleshooting. The system supports semantic context retrieval, shared memory across sub-agents, local tool execution, and CockroachDB MCP server integration, completely bypassing OpenRouter in favor of direct provider integrations.
 
 ## Instructions
 - Use phased approach: Phase 1 (CLI), Phase 2 (Background service + UI), Phase 3 (Advanced features)
@@ -341,6 +341,11 @@ data/
   - **Model Alias Cleanup (`src/models/provider_router.py`)**: Cleaned up Google AI Studio model mapping in `_generate_google_direct` to pass through requested model names directly and map legacy aliases safely.
   - **Repository Hygiene & Untracked Binaries**: Removed compiled temporary test binaries (`test.exe`, `test2.exe`, `test.pdb`, `test2.pdb`) and `.patch` files from git tracking. Updated `.gitignore` and `ui/src-tauri/.gitignore` with `*.exe`, `*.pdb`, `*.patch`.
   - **Full Test Suite Verification**: Verified 100% passing tests for `scripts/test_cockroach_store.py` (relational memory, incidents, runbooks, fix history), `scripts/test_vector_store.py` (pgvector cosine search, clean chunk replace), `scripts/test_sre_tools.py` (incident ingestion, fix actions, semantic RAG retrieval), `src/tools/test_mcp_normalization.py` (MCP tool payload normalization), and frontend TypeScript compilation (`npm run build`).
+- **Official Rebranding to AegisDB & Brand Icon Deployment (Aug 18, 2026)**:
+  - **Brand Assets**: Deployed official SVG brand assets (`appicon.SVG`, `logo.SVG`, `logo_horizontal.SVG`, `logo_mono_dark.SVG`) from `icons/` into `ui/public/` (`logo.svg`, `logo_horizontal.svg`, `appicon.svg`).
+  - **Tauri Desktop Icon Generation**: Generated full suite of desktop and mobile application icons (`icon.ico`, `icon.icns`, `128x128.png`, `128x128@2x.png`, `32x32.png`, `StoreLogo.png`, `Square*.png`) via `@tauri-apps/cli` in `ui/src-tauri/icons/`.
+  - **Frontend Desktop Shell**: Updated `tauri.conf.json` (`productName: AegisDB`, `identifier: com.aegisdb.app`), `lib.rs` system tray menu (`AegisDB (Engine Active)`), `ChatPanel.tsx` (top navigation bar logo, header titles, draft input, and footer), `index.html`, and `package.json`.
+  - **Backend & Documentation**: Updated `chat_server.py`, `embedded_backend.py`, `setup.py`, `README.md`, `AGENTS.md`, and the Master Notion Hub. Verified with complete test suite.
 
 ## Planned Future Roadmap Tasks (Notion Tracked)
 - **Task 1: Live Token Usage & Budget Warning Tracker Widget**: Add live token/cost meter in top header bar showing expenditure ($) per session/model with dynamic OpenRouter pricing catalog sync, multi-tier protection (75% Soft Alert, 90% Auto-Downgrade, 100% Hard Cap), sub-agent cost attribution tagging, atomic Redis sync, and an analytics drawer with spending graphs.

@@ -205,7 +205,7 @@ class EmbeddedBackend:
             "result": {
                 "status": "healthy",
                 "router_initialized": True,
-                "service": "agenticai-embedded",
+                "service": "aegisdb-embedded",
                 "redis_connected": redis_store.is_connected()
             },
             "id": None

@@ -19,7 +19,7 @@ from src.memory.cockroach_store import SQLiteMemoryStore
 from src.tools.terminal_manager import terminal_manager
 
 
-app = FastAPI(title="AgenticAI Chat API", version="1.0.0")
+app = FastAPI(title="AegisDB Chat API", version="1.0.0")
 
 # Enable CORS for frontend
 app.add_middleware(

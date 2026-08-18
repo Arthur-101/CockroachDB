@@ -696,11 +696,11 @@ pub fn run() {
         })
         .setup(|app| {
             let tray_result = (|| -> tauri::Result<()> {
-                let status_i = tauri::menu::MenuItem::with_id(app, "status", "CockroachSRE (Engine Active)", false, None::<&str>)?;
+                let status_i = tauri::menu::MenuItem::with_id(app, "status", "AegisDB (Engine Active)", false, None::<&str>)?;
                 let show_i = tauri::menu::MenuItem::with_id(app, "show", "Show Studio Window", true, None::<&str>)?;
                 let new_chat_i = tauri::menu::MenuItem::with_id(app, "new_chat", "Start New Chat", true, None::<&str>)?;
                 let toggle_i = tauri::menu::MenuItem::with_id(app, "toggle_engine", "Toggle AI Engine", true, None::<&str>)?;
-                let quit_i = tauri::menu::MenuItem::with_id(app, "quit", "Quit CockroachSRE", true, None::<&str>)?;
+                let quit_i = tauri::menu::MenuItem::with_id(app, "quit", "Quit AegisDB", true, None::<&str>)?;
 
                 let sep1 = tauri::menu::PredefinedMenuItem::separator(app)?;
                 let sep2 = tauri::menu::PredefinedMenuItem::separator(app)?;
@@ -711,7 +711,7 @@ pub fn run() {
 
                 let mut tray_builder = tauri::tray::TrayIconBuilder::new()
                     .menu(&menu)
-                    .tooltip("AgenticAI Studio - Multi-Model AI Ready")
+                    .tooltip("AegisDB — Autonomous SRE Copilot")
                     .show_menu_on_left_click(false);
 
                 if let Some(icon) = app.default_window_icon() {
