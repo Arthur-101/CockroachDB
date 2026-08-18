@@ -38,30 +38,55 @@ Traditional AI agents fail in production because their memory is either ephemera
 ## System Architecture
 
 ```mermaid
-graph TD
-    User([SRE Engineer / Production Alert]) -->|Trigger Incident / Chat| UI[AegisDB Tauri Desktop Studio]
-    
-    subgraph Client App
-        UI -->|IPC Bridge| Rust[Tauri Rust Layer & System Tray]
-        Rust -->|stdin/stdout JSON-RPC| PyAPI[Embedded Python SRE Backend]
+graph TB
+    %% TIER 1: CLIENT & INGESTION
+    subgraph T1["1. Client & Ingestion Layer"]
+        User["SRE Engineer / Production Alerts"]
+        UI["AegisDB Desktop Studio (Tauri v2 + React 19)"]
+        User -->|Incidents / Telemetry| UI
     end
 
-    subgraph Knowledge Base & Storage Layer
-        PyAPI -->|Dual-Sync Runbooks & Postmortems| S3[(Amazon S3 Knowledge Base)]
-        S3 -->|Dense 384d Embeddings| CRDB[(CockroachDB Cloud Serverless)]
-        PyAPI -->|Relational State: Incidents, Chats, Keys| CRDB
-        PyAPI -->|Semantic RAG Search: <=> Cosine| CRDB
-        PyAPI -->|Distributed Locks & PubSub| Redis[(Portable Bundled Redis Cache)]
+    %% TIER 2: AGENT ENGINE
+    subgraph T2["2. Autonomous Agent Orchestration"]
+        Bridge["IPC JSON-RPC Bridge"]
+        Router["Dynamic Multi-Model Router<br/>(Gemini, Claude, GPT-4o, DeepSeek)"]
+        Team["Sub-Agent Team & Consensus Synthesizer"]
+        UI -->|Desktop IPC| Bridge
+        Bridge --> Router
+        Router --> Team
     end
 
-    subgraph Autonomous Engine & Tools
-        PyAPI -->|Dynamic Model Orchestration| LLM[Dynamic Multi-Model Router]
-        PyAPI -->|Stateful Command Execution| Terminal[WinPTY Stateful Terminal]
-        PyAPI -->|Cluster Observability & Tools| MCP[CockroachDB Cloud MCP Server]
-        PyAPI -->|Execute SRE Skills| Skills[Custom SRE Skills Registry]
+    %% TIER 3: MEMORY & KNOWLEDGE (COCKROACHDB + AWS S3)
+    subgraph T3["3. Indestructible Memory & Knowledge Tier"]
+        direction LR
+        S3[("Amazon S3 Knowledge Base<br/>(Runbooks & Postmortems)")]
+        CRDB_REL[("CockroachDB Relational Store<br/>(Incidents, Chats, Facts, Keys)")]
+        CRDB_VEC[("CockroachDB pgvector Store<br/>(384d Dense Vector Search <=>)")]
+        Redis[("Bundled Redis Cache<br/>(Distributed Locks & PubSub)")]
+        
+        S3 -->|Dual-Sync Ingestion Pipeline| CRDB_VEC
     end
-    
-    PyAPI -->|Stream Responses & Incident Updates| UI
+
+    %% TIER 4: EXECUTION & TOOLS
+    subgraph T4["4. Diagnostic & Execution Toolchain"]
+        direction LR
+        WinPTY["Stateful WinPTY Terminal<br/>(Diagnostic Scripts & Fixes)"]
+        MCP["CockroachDB Cloud MCP Server<br/>(Live Cluster Observability)"]
+        Skills["SRE Skills Registry<br/>(Ingest, Match, Auto-Resolve)"]
+    end
+
+    %% CONNECTIONS BETWEEN TIERS
+    Team -->|Fetch Runbooks / Query Vector| CRDB_VEC
+    Team -->|Read / Write State & Incidents| CRDB_REL
+    Team -->|Sync & Cache Context| Redis
+    Team -->|Run Diagnostic Commands| WinPTY
+    Team -->|Inspect DB Health| MCP
+    Team -->|Execute SRE Actions| Skills
+
+    %% FEEDBACK LOOP
+    Skills -->|Auto-Resolve & Log Root Cause| CRDB_REL
+    Skills -->|Embed Resolution Vector| CRDB_VEC
+    WinPTY -->|Return Diagnostic Outputs| Team
 ```
 
 ---
