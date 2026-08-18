@@ -349,7 +349,7 @@ data/
   - **Backend & Documentation**: Updated `chat_server.py`, `embedded_backend.py`, `setup.py`, `README.md`, `AGENTS.md`, and the Master Notion Hub. Verified with complete test suite.
 - **Architectural Diagram Redesign (Aug 18, 2026)**:
   - Redesigned the architecture diagram into two clean, uncluttered options: (1) **4-Tier Modular System Architecture** separating Client/Ingest, Multi-Model Orchestration, CockroachDB + AWS S3 Memory/Knowledge, and Diagnostic WinPTY Execution, and (2) **Closed-Loop Self-Healing SRE Workflow**.
-  - Saved redesign diagrams and documentation directly to the Notion Master Hub page (`341c8b7b-66a5-80ed-b7ba-dddb5d3ea0d9`) for user review before updating the main README.
+  - Saved redesign diagrams and documentation directly to the CockroachAI Notion Hub page (`3b8c8b7b-66a5-809d-bfeb-f380a7bcb0e4`) and its subpage `💡 Ideas & Architecture Planning` (`3b8c8b7b-66a5-81dc-a510-f0bf3061e9db`) for user review before updating the main README.
 
 ## Planned Future Roadmap Tasks (Notion Tracked)
 - **Task 1: Live Token Usage & Budget Warning Tracker Widget**: Add live token/cost meter in top header bar showing expenditure ($) per session/model with dynamic OpenRouter pricing catalog sync, multi-tier protection (75% Soft Alert, 90% Auto-Downgrade, 100% Hard Cap), sub-agent cost attribution tagging, atomic Redis sync, and an analytics drawer with spending graphs.
