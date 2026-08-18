@@ -30,19 +30,19 @@
 
 ---
 
-## 🏆 Devpost Judging Criteria Mapping
+## Devpost Judging Criteria Mapping
 
 | Judging Criteria | How AegisDB Delivers |
 |---|---|
-| **🧠 Agentic Memory Design** | **CockroachDB Serverless** acts as the high-availability, always-on system of record. It stores conversational history, active incidents, resolution logs, role configurations, and 384-dimensional dense vector embeddings (`pgvector`) with cosine distance queries (`<=>`), surviving node crashes and multi-region failovers with zero data loss. |
-| **⚙️ Technical Implementation** | Built with native **CockroachDB Cloud Managed MCP Server** integration (`https://cockroachlabs.cloud/mcp`), local zero-quota `SentenceTransformer` vector indexing, autonomous **Amazon S3 (`boto3`)** tool calling, and a Tauri v2 desktop application with background system tray daemon. |
-| **💥 Real-World Impact** | Autonomous database incident triage and automated remediation for production microservices. Eliminates 3 AM panic by matching telemetry alerts to Amazon S3 playbooks, executing diagnostic scripts, and recording postmortems with zero human toil. |
-| **🛡️ Production Readiness** | Includes a persistent **SRE Guardrails & Policy Engine** preventing destructive DDLs, UPSERT-based deduplication, interactive permission controls, zero hardcoded model fallbacks, and multi-process state synchronization with bundled portable Redis. |
-| **✨ Creativity & Originality** | Features a **Heterogeneous Multi-Model SRE Collaboration Team** (Reasoning, Coding, Multimodal Specialists) with Consensus Synthesis, paired with an autonomous bidirectional Amazon S3 ⇄ CockroachDB knowledge pipeline. |
+| **Agentic Memory Design** | **CockroachDB Serverless** acts as the high-availability, always-on system of record. It stores conversational history, active incidents, resolution logs, role configurations, and 384-dimensional dense vector embeddings (`pgvector`) with cosine distance queries (`<=>`), surviving node crashes and multi-region failovers with zero data loss. |
+| **Technical Implementation** | Built with native **CockroachDB Cloud Managed MCP Server** integration (`https://cockroachlabs.cloud/mcp`), local zero-quota `SentenceTransformer` vector indexing, autonomous **Amazon S3 (`boto3`)** tool calling, and a Tauri v2 desktop application with background system tray daemon. |
+| **Real-World Impact** | Autonomous database incident triage and automated remediation for production microservices. Eliminates 3 AM panic by matching telemetry alerts to Amazon S3 playbooks, executing diagnostic scripts, and recording postmortems with zero human toil. |
+| **Production Readiness** | Includes a persistent **SRE Guardrails & Policy Engine** preventing destructive DDLs, UPSERT-based deduplication, interactive permission controls, zero hardcoded model fallbacks, and multi-process state synchronization with bundled portable Redis. |
+| **Creativity & Originality** | Features a **Heterogeneous Multi-Model SRE Collaboration Team** (Reasoning, Coding, Multimodal Specialists) with Consensus Synthesis, paired with an autonomous bidirectional Amazon S3 ⇄ CockroachDB knowledge pipeline. |
 
 ---
 
-## 📖 The Problem: Agents Need Memory That Never Goes Down
+##  The Problem: Agents Need Memory That Never Goes Down
 
 When a distributed production database experiences transaction contention, latency spikes, or node failovers at 3 AM, every second of downtime costs revenue. Human SREs must manually correlate telemetry alarms, search through scattered Wiki runbooks, and test remediation commands.
 
@@ -56,75 +56,15 @@ Traditional AI agents fail in production because their memory is either ephemera
 
 ---
 
-## 🏗️ System Architecture
+##  System Architecture
 
-```mermaid
-graph TB
-    %% TIER 1: CLIENT & INGESTION
-    subgraph T1["1. Client & Ingestion Layer"]
-        User["SRE Engineer / Production Telemetry Alerts"]
-        UI["AegisDB Desktop Studio (Tauri v2 + React 19 Glassmorphic UI)"]
-        Tray["Windows System Tray Background Service"]
-        User -->|Natural Language / Alerts| UI
-        UI <-->|Tray Events & Background Daemon| Tray
-    end
-
-    %% TIER 2: AGENT ENGINE & ROUTING
-    subgraph T2["2. Dynamic Multi-Model SRE Collaboration Engine"]
-        Bridge["IPC JSON-RPC Bridge"]
-        Router["Dynamic Multi-Model Router<br/>(Google Gemini, AWS Bedrock Claude, OpenAI, DeepSeek)"]
-        subgraph Team["Collaborative Sub-Agent Team"]
-            Reasoning["🧠 Reasoning Specialist (Architecture & Triage)"]
-            Coding["💻 Coding Specialist (SQL / Remediation)"]
-            Vision["👁️ Multimodal Specialist (Screenshots / Logs)"]
-            Synth["🤝 Consensus Synthesizer (Master Plan)"]
-        end
-        UI -->|Desktop IPC| Bridge
-        Bridge --> Router
-        Router --> Reasoning & Coding & Vision
-        Reasoning & Coding & Vision --> Synth
-    end
-
-    %% TIER 3: INDESTRUCTIBLE MEMORY (COCKROACHDB + AMAZON S3)
-    subgraph T3["3. Indestructible Memory & Knowledge Tier"]
-        direction LR
-        S3[("📦 Amazon S3 Knowledge Base<br/>(s3://cockroachsre-knowledge-base)<br/>runbooks/ & incident-logs/")]
-        CRDB_REL[("🪳 CockroachDB Relational Store<br/>(incidents, runbooks, fix_history, api_keys, user_memories)")]
-        CRDB_VEC[("⚡ CockroachDB pgvector Store<br/>(384d Dense Vector Search <=>)")]
-        Redis[("⚡ Bundled Redis Cache<br/>(Pub/Sub, Distributed Locks, Session State)")]
-        
-        S3 <-->|Autonomous Bidirectional Sync Pipeline| CRDB_VEC
-        S3 <-->|Relational Sync & Deduplication| CRDB_REL
-    end
-
-    %% TIER 4: DIAGNOSTIC & EXECUTION TOOLCHAIN
-    subgraph T4["4. Diagnostic & Execution Toolchain"]
-        direction LR
-        WinPTY["🖥️ Stateful WinPTY Terminal<br/>(Diagnostic Scripts & Fixes)"]
-        MCP["🔌 CockroachDB Cloud MCP Server<br/>(Live Cluster Observability & Stats)"]
-        S3Tools["☁️ Autonomous S3 Tools<br/>(List, Fetch, Index, Upload)"]
-        SREStore["📋 SRE Lifecycle Skills<br/>(Ingest, Match, Auto-Resolve)"]
-    end
-
-    %% CONNECTIONS BETWEEN TIERS
-    Team -->|Fetch Runbooks / Query Vector| CRDB_VEC
-    Team -->|Read / Write State & Incidents| CRDB_REL
-    Team -->|Sync & Cache Context| Redis
-    Team -->|Run Diagnostic Commands| WinPTY
-    Team -->|Query Cluster Metrics & Schema| MCP
-    Team -->|Sync & Upload Runbooks / Logs| S3Tools
-    Team -->|Execute SRE Triage Actions| SREStore
-
-    %% FEEDBACK LOOP
-    SREStore -->|Auto-Resolve & Log Root Cause| CRDB_REL
-    SREStore -->|Embed Resolution Vector| CRDB_VEC
-    S3Tools -->|Upload Postmortem JSON| S3
-    WinPTY -->|Return Diagnostic Outputs| Team
-```
+<p align="center">
+  <img src="Diagram/diagram.png" alt="AegisDB System Architecture" width="850" />
+</p>
 
 ---
 
-## 🪳 CockroachDB Tools & Features Used
+##  CockroachDB Tools & Features Used
 
 ### 1. Distributed Vector Indexing (`pgvector` / `VECTOR(384)`)
 - Stores dense 384-dimensional vector embeddings directly in CockroachDB's `documents`, `messages`, and `user_memories` tables.
@@ -159,7 +99,7 @@ graph TB
 
 ---
 
-## ☁️ AWS Services Used
+##  AWS Services Used
 
 ### 1. Amazon S3 (`cockroachsre-knowledge-base`, Region: `ap-south-1`)
 - **Authoritative Single Source of Truth**: Houses all verified SRE playbooks (`runbooks/<name>.md`) and structured incident lifecycle logs (`incident-logs/<date>/<incident_id>.json`).
@@ -172,7 +112,7 @@ graph TB
 
 ---
 
-## 🤖 Dynamic Multi-Model SRE Collaboration Team
+## Dynamic Multi-Model SRE Collaboration Team
 
 AegisDB utilizes a dynamic heterogeneous multi-agent team architecture with on-the-fly hot swapping:
 
@@ -184,21 +124,21 @@ AegisDB utilizes a dynamic heterogeneous multi-agent team architecture with on-t
                                      ▼
                           ┌────────────────────────┐
                           │    Main Orchestrator   │
-                          │ (Gemini 2.5 / GPT-4o)  │
+                          │      (Any Model)       │
                           └──────────┬─────────────┘
                                      │
          ┌───────────────────────────┼───────────────────────────┐
          ▼                           ▼                           ▼
 ┌──────────────────┐       ┌──────────────────┐       ┌──────────────────┐
 │  Reasoning Agent │       │   Coding Agent   │       │ Multimodal Agent │
-│(Claude 3.5 / Pro)│       │ (DeepSeek / Coder│       │ (Gemini 2.0 / 4o)│
+│                  │       │                  │       │                  │
 └────────┬─────────┘       └────────┬─────────┘       └────────┬─────────┘
          │ (Architecture Plan)      │ (Implementation)         │ (Media Analysis)
          └───────────────────────────┼───────────────────────────┘
                                      ▼
                           ┌────────────────────────┐
                           │  Consensus Synthesizer │
-                          │ (Gemini / Qwen Flash)  │
+                          │                        │
                           └──────────┬─────────────┘
                                      │
                                      ▼
@@ -217,7 +157,7 @@ AegisDB utilizes a dynamic heterogeneous multi-agent team architecture with on-t
 
 ---
 
-## 🛡️ SRE Guardrails & Operational Knowledge
+##  SRE Guardrails & Operational Knowledge
 
 AegisDB features a persistent **SRE Policy Engine** stored in CockroachDB and retrieved semantically on every turn:
 - **Destructive DDL Protection**: Strictly prohibits unconfirmed `DROP TABLE`, `DROP DATABASE`, or `TRUNCATE` operations without explicit human confirmation and verified backups.
@@ -226,7 +166,7 @@ AegisDB features a persistent **SRE Policy Engine** stored in CockroachDB and re
 
 ---
 
-## 🚀 Installation & Quickstart
+##  Installation & Quickstart
 
 ### Prerequisites
 - **Python 3.10+** (Python 3.12 recommended)
@@ -305,7 +245,7 @@ npm run tauri dev
 
 ---
 
-## 🧪 Verification & Automated Tests
+##  Verification & Automated Tests
 
 Run the test suite to verify CockroachDB relational storage, pgvector semantic search, S3 tools, and multi-model routing:
 
@@ -328,7 +268,7 @@ cd ui && npm run build
 
 ---
 
-## 💡 Feedback on CockroachDB AI Tools & Features
+##  Feedback on CockroachDB AI Tools & Features
 
 As part of the hackathon experience, our team compiled the following constructive feedback for the CockroachDB AI product team:
 
@@ -338,15 +278,10 @@ As part of the hackathon experience, our team compiled the following constructiv
 
 ---
 
-## 🔒 Security & Safety Controls
-
-- **Zero Credential Leakage**: Strict `.env` isolation; zero hardcoded secrets in source code or Git history.
-- **Interactive Execution Guardrails**: Destructive terminal actions and SQL DDL operations require explicit confirmation.
-- **Zero-Quota API Validation**: API key testing uses lightweight model listing metadata checks without consuming generation token quotas.
 
 ---
 
-## 📄 License
+##  License
 
 Distributed under the **MIT License**. See [`LICENSE`](file:///E:/Codes/CockroachAI/LICENSE) for more information.
 
