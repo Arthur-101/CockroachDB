@@ -12,7 +12,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/CockroachDB-pgvector_384d-6933FF?logo=cockroachlabs&logoColor=white" alt="CockroachDB" />
   <img src="https://img.shields.io/badge/Amazon_S3-Knowledge_Base-FF9900?logo=amazons3&logoColor=white" alt="Amazon S3" />
-  <img src="https://img.shields.io/badge/Brain-Google_Gemini_2.0_Flash-4285F4?logo=google&logoColor=white" alt="Gemini" />
+  <img src="https://img.shields.io/badge/Model_Routing-Dynamic_Multi--Model-blueviolet" alt="Multi-Model" />
   <img src="https://img.shields.io/badge/Tauri_v2-Desktop_Tray-24C8D8?logo=tauri&logoColor=white" alt="Tauri" />
   <img src="https://img.shields.io/badge/Python-3.9+-3776AB?logo=python&logoColor=white" alt="Python" />
   <img src="https://img.shields.io/badge/React-19_TypeScript-61DAFB?logo=react&logoColor=black" alt="React" />
@@ -54,8 +54,8 @@ graph TD
         PyAPI -->|Distributed Locks & PubSub| Redis[(Portable Bundled Redis Cache)]
     end
 
-    subgraph Autonomous Brain & Tools
-        PyAPI -->|Orchestrate Diagnostics| LLM[Google Gemini 2.0 Flash / Multi-Model Team]
+    subgraph Autonomous Engine & Tools
+        PyAPI -->|Dynamic Model Orchestration| LLM[Dynamic Multi-Model Router]
         PyAPI -->|Stateful Command Execution| Terminal[WinPTY Stateful Terminal]
         PyAPI -->|Cluster Observability & Tools| MCP[CockroachDB Cloud MCP Server]
         PyAPI -->|Execute SRE Skills| Skills[Custom SRE Skills Registry]
@@ -68,7 +68,7 @@ graph TD
 
 ## CockroachDB & AWS Capabilities
 
-### 🪳 CockroachDB Services Used
+### CockroachDB Services Used
 
 1. **Distributed Vector Indexing (`pgvector` / `VECTOR(384)`)**:
    - Stores dense 384-dimensional embeddings directly in CockroachDB (`documents`, `messages`, `user_memories` tables).
@@ -82,7 +82,7 @@ graph TD
    - Streamable MCP endpoint (`https://cockroachlabs.cloud/mcp`) for live database metrics and schema analysis.
    - Machine-executable SRE skills (`ingest_incident`, `save_runbook`, `record_fix_action`, `get_incidents`, `get_runbooks`, `get_fix_history`).
 
-### ☁️ AWS Services Used
+### AWS Services Used
 
 1. **Amazon S3 (`cockroachsre-knowledge-base`, Region: `ap-south-1`)**:
    - Authoritative cloud storage for SRE runbooks (`.md`), incident postmortems, and telemetry logs.
@@ -93,7 +93,7 @@ graph TD
 ## Core Features
 
 - **Closed-Loop SRE Remediation**: Alert Ingest → S3 Runbook Match → Terminal Execution → CockroachDB Auto-Resolve → Vector Fix Embedding.
-- **Tauri System Tray & Background Service**: Minimizes to the Windows System Tray with native menus (`🟢 AegisDB (Engine Active)`, `🖥️ Show Studio Window`, `➕ Start New Chat`, `⚡ Toggle AI Engine`, `❌ Quit AegisDB`).
+- **Tauri System Tray & Background Service**: Minimizes to the Windows System Tray with native menus (`AegisDB (Engine Active)`, `Show Studio Window`, `Start New Chat`, `Toggle AI Engine`, `Quit AegisDB`).
 - **Zero-Install Bundled Redis**: Auto-starts a portable Redis v5.0 binary for distributed locks and session state caching with automatic fallback.
 - **Smart Long-Term Memory Curation**: Auto-extracts enduring personal preferences and system specs, curating them via `UPDATE`, `ADD`, or `SKIP` evaluations in CockroachDB.
 - **Multi-Model Team Collaboration**: Parallel background workers (Coding, Reasoning, Multimodal) merged via a `ConsensusAggregator`.
@@ -144,7 +144,7 @@ AWS_ACCESS_KEY_ID=YOUR_AWS_ACCESS_KEY_ID
 AWS_SECRET_ACCESS_KEY=YOUR_AWS_SECRET_ACCESS_KEY
 AWS_REGION=ap-south-1
 
-# Google AI Studio Configuration (Orchestrator Brain)
+# Google AI Studio Configuration
 GEMINI_API_KEY=YOUR_GEMINI_API_KEY
 
 # CockroachDB MCP Integration
