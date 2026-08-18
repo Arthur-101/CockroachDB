@@ -31,6 +31,18 @@ def _get_conn() -> psycopg2.extensions.connection:
     """Open a new psycopg2 connection using COCKROACH_DATABASE_URL."""
     url = os.environ.get("COCKROACH_DATABASE_URL")
     if not url:
+        try:
+            from dotenv import load_dotenv
+            # Check current working directory and project root
+            root_env = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), ".env")
+            if os.path.exists(root_env):
+                load_dotenv(root_env)
+            else:
+                load_dotenv()
+            url = os.environ.get("COCKROACH_DATABASE_URL")
+        except Exception:
+            pass
+    if not url:
         raise RuntimeError(
             "COCKROACH_DATABASE_URL is not set. "
             "Add it to your .env file and restart."

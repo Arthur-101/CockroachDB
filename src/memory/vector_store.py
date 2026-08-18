@@ -40,6 +40,17 @@ def _get_embedding_model():
 def _get_conn() -> psycopg2.extensions.connection:
     url = os.environ.get("COCKROACH_DATABASE_URL")
     if not url:
+        try:
+            from dotenv import load_dotenv
+            root_env = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), ".env")
+            if os.path.exists(root_env):
+                load_dotenv(root_env)
+            else:
+                load_dotenv()
+            url = os.environ.get("COCKROACH_DATABASE_URL")
+        except Exception:
+            pass
+    if not url:
         raise RuntimeError(
             "COCKROACH_DATABASE_URL is not set in environment."
         )

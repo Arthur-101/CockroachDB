@@ -49,6 +49,9 @@ data/*
 # Temporary files
 *.tmp
 *.temp
+*.patch
+*.exe
+*.pdb
 z_DebugImages/
 
 # OS

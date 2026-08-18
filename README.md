@@ -115,19 +115,20 @@ Open `.env` and set the following parameters:
 
 ```env
 # Database Connection (CockroachDB Serverless Cluster)
-COCKROACH_DATABASE_URL=postgresql://saurav0142:YOUR_PASS@cockroachsre-dev-31720.j77.aws-ap-south-1.cockroachlabs.cloud:26257/defaultdb?sslmode=verify-full
+COCKROACH_DATABASE_URL=postgresql://username:password@your-cluster.cockroachlabs.cloud:26257/defaultdb?sslmode=verify-full
 
-# AWS Bedrock Configuration
+# Amazon S3 & AWS Configuration (Knowledge Base & Runbooks)
+S3_BUCKET_NAME=cockroachsre-knowledge-base
 AWS_ACCESS_KEY_ID=YOUR_AWS_ACCESS_KEY_ID
 AWS_SECRET_ACCESS_KEY=YOUR_AWS_SECRET_ACCESS_KEY
 AWS_REGION=ap-south-1
 
-# Google AI Studio Configuration (Orchestrator fallback)
+# Google AI Studio Configuration (Orchestrator & Vision)
 GEMINI_API_KEY=YOUR_GEMINI_API_KEY
 
 # CockroachDB MCP Integration
 COCKROACH_MCP_URL=https://cockroachlabs.cloud/mcp
-COCKROACH_MCP_CLUSTER_ID=7f4a4a09-a2fd-4753-9d7a-7f213f73940c
+COCKROACH_MCP_CLUSTER_ID=YOUR_COCKROACH_MCP_CLUSTER_ID
 ```
 
 ### 3. Direct API Keys Configuration

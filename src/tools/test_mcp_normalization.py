@@ -5,6 +5,9 @@ from pathlib import Path
 # Add project root to python path to import src modules
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
+from dotenv import load_dotenv
+load_dotenv()
+
 from src.tools.basic_tools import ToolManager
 from src.tools.mcp_manager import mcp_manager, McpClient
 

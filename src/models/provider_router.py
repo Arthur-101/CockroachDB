@@ -635,14 +635,10 @@ class ProviderRouter:
         import re
         from src.models.openrouter_client import extract_text_content
 
-        # Auto-map deprecated/migrated model identifiers to active Google models
+        # Map legacy model aliases if needed, otherwise use the exact model requested
         model_aliases = {
-            "gemini-2.0-flash": "gemini-3.5-flash-lite",
-            "gemini-2.0-flash-lite": "gemini-3.5-flash-lite",
-            "gemini-2.5-flash": "gemini-3.5-flash-lite",
-            "gemini-2.5-flash-lite": "gemini-3.5-flash-lite",
-            "gemini-1.5-flash": "gemini-3.5-flash-lite",
-            "gemini-1.5-pro": "gemini-3.5-flash-light",
+            "gemini-pro": "gemini-1.5-flash",
+            "gemini-1.0-pro": "gemini-1.5-flash",
         }
         resolved_model = model_aliases.get(model_name.strip(), model_name.strip())
 

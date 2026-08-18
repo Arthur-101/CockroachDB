@@ -333,7 +333,14 @@ data/
   - Upgraded `VectorMemoryStore.add_document()` to use atomic transaction scoped replacement (`DELETE FROM documents WHERE source = %s` followed by fresh chunk `INSERT`s) eliminating stale "ghost chunks" when documents are shortened or modified.
   - Added `delete_document(file_path)` to remove all chunks for a specific document/S3 key.
   - Added `clear_all_documents()` for full knowledge base vector purges and resets.
-  - Added `get_indexed_documents_stats()` reporting total indexed documents, total 384-dimensional chunks, and per-document chunk counts. Verified with test suite.
+- **Security & Credential Leakage Audit for CockroachDB x AWS Hackathon (Aug 18, 2026)**:
+  - **Zero Credential Leakage**: Performed deep regex and git commit history scan for AWS keys (`AKIA...`), Google AI Studio keys (`AIza...`), OpenAI keys (`sk-...`), and database credentials. Verified zero live secrets committed in source code or Git history.
+  - **Sanitized Documentation & Configuration Templates**: Sanitized `README.md` and `.env.example` to use generic connection placeholders (`postgresql://username:password@your-cluster.cockroachlabs.cloud:26257/defaultdb?sslmode=verify-full`, `COCKROACH_MCP_CLUSTER_ID=YOUR_COCKROACH_MCP_CLUSTER_ID`, `S3_BUCKET_NAME=cockroachsre-knowledge-base`).
+  - **Defensive Dotenv Auto-Loading (`src/memory/cockroach_store.py`, `src/memory/vector_store.py`)**: Enhanced `_get_conn()` in both database layers to automatically locate and load `.env` from project root if `COCKROACH_DATABASE_URL` is missing from `os.environ`, preventing crashes during standalone script and test execution.
+  - **Async/Await Fix in FastAPI Backend (`src/api/chat_server.py`)**: Added missing `await` to `chat_router.chat(...)` in `chat_endpoint`.
+  - **Model Alias Cleanup (`src/models/provider_router.py`)**: Cleaned up Google AI Studio model mapping in `_generate_google_direct` to pass through requested model names directly and map legacy aliases safely.
+  - **Repository Hygiene & Untracked Binaries**: Removed compiled temporary test binaries (`test.exe`, `test2.exe`, `test.pdb`, `test2.pdb`) and `.patch` files from git tracking. Updated `.gitignore` and `ui/src-tauri/.gitignore` with `*.exe`, `*.pdb`, `*.patch`.
+  - **Full Test Suite Verification**: Verified 100% passing tests for `scripts/test_cockroach_store.py` (relational memory, incidents, runbooks, fix history), `scripts/test_vector_store.py` (pgvector cosine search, clean chunk replace), `scripts/test_sre_tools.py` (incident ingestion, fix actions, semantic RAG retrieval), `src/tools/test_mcp_normalization.py` (MCP tool payload normalization), and frontend TypeScript compilation (`npm run build`).
 
 ## Planned Future Roadmap Tasks (Notion Tracked)
 - **Task 1: Live Token Usage & Budget Warning Tracker Widget**: Add live token/cost meter in top header bar showing expenditure ($) per session/model with dynamic OpenRouter pricing catalog sync, multi-tier protection (75% Soft Alert, 90% Auto-Downgrade, 100% Hard Cap), sub-agent cost attribution tagging, atomic Redis sync, and an analytics drawer with spending graphs.

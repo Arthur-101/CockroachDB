@@ -86,7 +86,7 @@ async def chat_endpoint(request: ChatRequest) -> ChatResponse:
         raise HTTPException(status_code=500, detail="Chat router not initialized")
     
     try:
-        result = chat_router.chat(
+        result = await chat_router.chat(
             user_message=request.message,
             session_id=request.session_id,
             model_override=request.model_override,
