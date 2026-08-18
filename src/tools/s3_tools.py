@@ -16,6 +16,16 @@ import os
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+try:
+    from dotenv import load_dotenv
+    root_env = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), ".env")
+    if os.path.exists(root_env):
+        load_dotenv(root_env)
+    else:
+        load_dotenv()
+except Exception:
+    pass
+
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
@@ -24,7 +34,6 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Default bucket / prefix constants (overridable via env)
 # ---------------------------------------------------------------------------
-DEFAULT_BUCKET = os.environ.get("S3_BUCKET_NAME", "cockroachsre-knowledge-base")
 RUNBOOK_PREFIX = "runbooks/"
 INCIDENT_PREFIX = "incident-logs/"
 
@@ -48,8 +57,8 @@ class S3KnowledgeBase:
     for semantic search.
     """
 
-    def __init__(self, bucket: str = DEFAULT_BUCKET):
-        self.bucket = bucket
+    def __init__(self, bucket: Optional[str] = None):
+        self.bucket = bucket or os.environ.get("S3_BUCKET_NAME", "cockroachsre-knowledge-base")
         self._s3 = None  # lazy init
 
     @property
@@ -57,6 +66,7 @@ class S3KnowledgeBase:
         if self._s3 is None:
             self._s3 = _get_s3_client()
         return self._s3
+
 
     # ------------------------------------------------------------------
     # Upload helpers

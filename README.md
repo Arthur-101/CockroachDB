@@ -22,7 +22,7 @@
 
 ---
 
-## 🎬 Project Highlights & Links
+##  Project Highlights & Links
 
 - **Repository**: [https://github.com/Arthur-101/CockroachDB](https://github.com/Arthur-101/CockroachDB)
 - **Demo Video (3 Minutes)**: [Watch on YouTube](https://youtu.be/placeholder) *(Replace with your video link)*
@@ -288,5 +288,5 @@ Distributed under the **MIT License**. See [`LICENSE`](file:///E:/Codes/Cockroac
 ---
 
 <p align="center">
-  <strong>AegisDB — Built with ❤️ for the CockroachDB × AWS Hackathon 2026.</strong>
+  <strong>AegisDB — Built for the CockroachDB × AWS Hackathon 2026.</strong>
 </p>
