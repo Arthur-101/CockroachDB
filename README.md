@@ -178,6 +178,13 @@ AegisDB features a persistent **SRE Policy Engine** stored in CockroachDB and re
 ### 1. Clone & Setup Backend
 
 ```bash
+# 1. Install Rust (if not already installed)                                                                                                                                                          
+winget install Rustlang.Rustup                                                                                                                                                                        
+# ← Restart terminal after this                                                                                                                                                                       
+ 
+# 2. Install Node.js (v18+)                                                                                                                                                                           
+winget install OpenJS.NodeJS   
+
 # Clone the repository
 git clone https://github.com/Arthur-101/CockroachDB.git AegisDB
 cd AegisDB

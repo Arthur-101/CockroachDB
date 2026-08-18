@@ -65,7 +65,7 @@ Thumbs.db
 ecc_reference.txt
 AGENTS.md
 NOTION_TEMPLATE.md
-INSTALL.md
+# INSTALL.md
 Intelligent_config.txt
 bin/redis/*RELEASENOTES*
 bin/redis/README.txt

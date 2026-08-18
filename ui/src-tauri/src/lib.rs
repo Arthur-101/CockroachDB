@@ -1,5 +1,8 @@
+#![allow(non_snake_case)]
+
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 use std::process::{Child, Command, Stdio};
+
 // use std::sync::Mutex;
 use std::io::{Write, BufRead, BufReader};
 use tokio::sync::Mutex as AsyncMutex;

@@ -28,13 +28,22 @@ from src.memory.redis_store import redis_store
 # ---------------------------------------------------------------------------
 
 def _get_conn() -> psycopg2.extensions.connection:
-    """Open a new psycopg2 connection using COCKROACH_DATABASE_URL."""
+    """Open a new psycopg2 connection using COCKROACH_DATABASE_URL.
+
+    Automatically falls back from sslmode=verify-full → sslmode=require
+    when the system root CA certificate (~/.postgresql/root.crt) is missing.
+    This is common on fresh clones without the CockroachDB CLI installed.
+    The connection remains fully TLS-encrypted either way.
+    """
     url = os.environ.get("COCKROACH_DATABASE_URL")
     if not url:
         try:
             from dotenv import load_dotenv
-            # Check current working directory and project root
-            root_env = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), ".env")
+            # Resolve .env relative to the project root (3 levels up from this file)
+            root_env = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                ".env"
+            )
             if os.path.exists(root_env):
                 load_dotenv(root_env)
             else:
@@ -47,9 +56,39 @@ def _get_conn() -> psycopg2.extensions.connection:
             "COCKROACH_DATABASE_URL is not set. "
             "Add it to your .env file and restart."
         )
-    conn = psycopg2.connect(url, cursor_factory=psycopg2.extras.RealDictCursor)
-    conn.autocommit = True
-    return conn
+
+    def _connect(connection_url: str) -> psycopg2.extensions.connection:
+        conn = psycopg2.connect(connection_url, cursor_factory=psycopg2.extras.RealDictCursor)
+        conn.autocommit = True
+        return conn
+
+    try:
+        return _connect(url)
+    except Exception as primary_err:
+        err_str = str(primary_err).lower()
+        # SSL root cert missing on this machine — retry with sslmode=require
+        # (still fully encrypted; just skips server-certificate identity check)
+        if "root cert" in err_str or "certificate" in err_str or "ssl" in err_str:
+            fallback_url = url
+            for bad_mode in ("sslmode=verify-full", "sslmode=verify-ca"):
+                fallback_url = fallback_url.replace(bad_mode, "sslmode=require")
+            try:
+                conn = _connect(fallback_url)
+                print(
+                    "[INFO] CockroachDB: SSL root certificate not found on this machine. "
+                    "Connected with sslmode=require (still fully encrypted). "
+                    "To silence this message, install the CockroachDB CLI or set "
+                    "sslmode=require in your COCKROACH_DATABASE_URL."
+                )
+                return conn
+            except Exception as fallback_err:
+                raise RuntimeError(
+                    f"CockroachDB connection failed.\n"
+                    f"  Primary error  (sslmode=verify-full): {primary_err}\n"
+                    f"  Fallback error (sslmode=require):      {fallback_err}\n\n"
+                    f"Check your COCKROACH_DATABASE_URL in .env."
+                ) from fallback_err
+        raise
 
 
 # ---------------------------------------------------------------------------
