@@ -71,15 +71,16 @@ Create an intelligent SRE Copilot that runs continuously to monitor services, an
 
 ## Core Architecture
 
-### Model Selection Strategy
-1. **Main Controller & Orchestrator**: Google Gemini 2.0 Flash (fast, high rate limits)
-2. **Reasoning & Planning Layer**: AWS Bedrock (Claude 3.5 Sonnet v2)
-3. **Coding/Execution Specialist**: Google Gemini 2.0 Flash / OpenAI GPT-4o Mini
-4. **Multimodal Specialist**: Google Gemini 2.0 Flash
-5. **Background Summarization**: Google Gemini 2.5 Flash Lite
+### Dynamic Multi-Model Selection Strategy
+AegisDB employs dynamic heterogeneous model routing across all active providers (Google AI Studio Gemini variants, OpenAI, Anthropic, Groq, Mistral AI) with on-the-fly hot swapping:
+1. **Orchestrator Role**: Dynamically selectable across Google Gemini variants (2.0 Flash, 2.5 Flash, 3.x), GPT-4o, and Claude.
+2. **Coding Specialist**: Dynamically assigned (e.g. DeepSeek V4 Flash, Gemini 2.0 Flash, GPT-4o Mini).
+3. **Reasoning Specialist**: Dynamically assigned (e.g. Claude 3.5 Sonnet, DeepSeek V4 Pro, Gemini 2.5 Pro).
+4. **Multimodal Specialist**: Dynamically assigned (Gemini 2.0 Flash, GPT-4o Vision).
+5. **Background Summarization & Memory**: Dynamically assigned (Gemini 2.5 Flash Lite, GPT-OSS).
 
 **Environment Configuration**
-- `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION` – AWS Bedrock credentials
+- `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION` – AWS S3 credentials
 - `GEMINI_API_KEY` – Google AI Studio key
 - `COCKROACH_DATABASE_URL` – Cloud Serverless cluster URL
 
