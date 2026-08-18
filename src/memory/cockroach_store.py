@@ -937,9 +937,29 @@ class CockroachMemoryStore:
         severity: str = "P3",
         service_name: str = "",
         metadata: Optional[Dict[str, Any]] = None,
+        incident_id: Optional[str] = None,
     ) -> str:
-        """Save a new SRE incident to CockroachDB."""
-        incident_id = str(uuid.uuid4())
+        """Save or update an SRE incident in CockroachDB (deduplicates by id or title)."""
+        inc_id = (incident_id or "").strip()
+        cur = self._cursor()
+        if inc_id:
+            cur.execute("SELECT id FROM incidents WHERE id = %s LIMIT 1", (inc_id,))
+        else:
+            cur.execute("SELECT id FROM incidents WHERE LOWER(title) = LOWER(%s) LIMIT 1", (title.strip(),))
+        existing = cur.fetchone()
+        if existing:
+            target_id = existing["id"]
+            self._execute(
+                """
+                UPDATE incidents
+                SET title = %s, description = %s, severity = %s, service_name = %s, metadata = %s
+                WHERE id = %s
+                """,
+                (title.strip(), description, severity, service_name, json.dumps(metadata or {}), target_id)
+            )
+            return target_id
+
+        new_id = inc_id or str(uuid.uuid4())
         self._execute(
             """
             INSERT INTO incidents
@@ -947,15 +967,15 @@ class CockroachMemoryStore:
             VALUES (%s, %s, %s, %s, %s, 'NEW', %s)
             """,
             (
-                incident_id,
-                title,
+                new_id,
+                title.strip(),
                 description,
                 severity,
                 service_name,
                 json.dumps(metadata or {}),
             ),
         )
-        return incident_id
+        return new_id
 
     def get_incidents(
         self,
@@ -1023,14 +1043,29 @@ class CockroachMemoryStore:
         service_name: str = "",
         author: str = "",
     ) -> str:
-        """Save an SRE runbook / playbook."""
+        """Save or update an SRE runbook / playbook (deduplicates by title)."""
+        cur = self._cursor()
+        cur.execute("SELECT id FROM runbooks WHERE LOWER(title) = LOWER(%s) LIMIT 1", (title.strip(),))
+        existing = cur.fetchone()
+        if existing:
+            runbook_id = existing["id"]
+            self._execute(
+                """
+                UPDATE runbooks 
+                SET content = %s, service_name = %s, author = %s, updated_at = NOW()
+                WHERE id = %s
+                """,
+                (content, service_name, author, runbook_id)
+            )
+            return runbook_id
+
         runbook_id = str(uuid.uuid4())
         self._execute(
             """
             INSERT INTO runbooks (id, title, content, service_name, author)
             VALUES (%s, %s, %s, %s, %s)
             """,
-            (runbook_id, title, content, service_name, author),
+            (runbook_id, title.strip(), content, service_name, author),
         )
         return runbook_id
 
@@ -1073,7 +1108,22 @@ class CockroachMemoryStore:
         runbook_id: Optional[str] = None,
         success: bool = True,
     ) -> str:
-        """Record a fix/resolution action taken during an incident."""
+        """Record or update a fix/resolution action taken during an incident."""
+        cur = self._cursor()
+        cur.execute("SELECT id FROM fix_history WHERE incident_id = %s AND LOWER(action_taken) = LOWER(%s) LIMIT 1", (incident_id, action_taken.strip()))
+        existing = cur.fetchone()
+        if existing:
+            fix_id = existing["id"]
+            self._execute(
+                """
+                UPDATE fix_history
+                SET engineer_notes = %s, runbook_id = %s, success = %s
+                WHERE id = %s
+                """,
+                (engineer_notes or "", runbook_id, 1 if success else 0, fix_id)
+            )
+            return fix_id
+
         fix_id = str(uuid.uuid4())
         self._execute(
             """
@@ -1085,8 +1135,8 @@ class CockroachMemoryStore:
                 fix_id,
                 incident_id,
                 runbook_id,
-                action_taken,
-                engineer_notes,
+                action_taken.strip(),
+                engineer_notes or "",
                 1 if success else 0,
             ),
         )

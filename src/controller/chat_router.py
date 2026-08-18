@@ -345,7 +345,7 @@ class ChatRouter:
             
             if vector_context_texts:
                 vector_context = "\n".join(vector_context_texts)
-                context_messages.insert(-1, Message(role="system", content=f"Relevant factual memories about the user/project retrieved from memory:\n{vector_context}\n\nSYSTEM INSTRUCTION: Use these retrieved memories ONLY if they are directly relevant to the user's current request. Do not mention them if they are unrelated."))
+                context_messages.insert(-1, Message(role="system", content=f"Relevant SRE operational policies and cluster knowledge retrieved from persistent memory:\n{vector_context}\n\nSYSTEM INSTRUCTION: Apply these SRE operational policies and cluster rules when relevant to the incident or task."))
 
         # Search vector store for relevant indexed document chunks (RAG)
         doc_results = self.vector_store.search_documents(query=user_message, limit=5)
@@ -379,7 +379,7 @@ class ChatRouter:
                 doc_context = "\n\n".join(doc_context_texts)
                 context_messages.insert(-1, Message(
                     role="system",
-                    content=f"--- RETRIEVED DOCUMENT CONTEXT (RAG) ---\n{doc_context}\n--- END RETRIEVED DOCUMENT CONTEXT ---\n\nSYSTEM INSTRUCTION: Use the above retrieved document chunks to accurately answer the user's question if relevant."
+                    content=f"Relevant knowledge base runbooks & document chunks (Amazon S3 / CockroachDB RAG):\n{doc_context}\n\nSYSTEM INSTRUCTION: Prioritize runbooks and technical documents retrieved above when troubleshooting."
                 ))
         
         # Add live terminal state
@@ -388,10 +388,10 @@ class ChatRouter:
             context_messages.insert(-1, Message(role="system", content=f"--- CURRENT TERMINAL STATE ---\n{term_history}\n--- END TERMINAL STATE ---\n\nSYSTEM INSTRUCTION: This is the live output of the shared terminal. You can see the commands the user ran and their outputs. Use this to understand the current state and answer the user's questions."))
             
         return ChatContext(
-            system_prompt=system_prompt,
-            recent_summaries=recent_summaries,
-            tag_matched_messages=tag_matched_messages,
+            session_id=session_id,
             assembled_messages=context_messages,
+            used_summaries=use_summaries,
+            matched_tags=tags,
         )
     
     async def _select_model(
@@ -403,7 +403,7 @@ class ChatRouter:
         """Select appropriate model based on message and context."""
         # 1. Explicit role name override (e.g. user typed "coding" in model selector)
         if model_override and model_override not in ["auto", "collaborative", "team", "multi_model"]:
-            if model_override.lower() in ["coding", "reasoning", "multimodal", "synthesizer", "summary", "stt", "tts"]:
+            if model_override.lower() in ["coding", "reasoning", "multimodal", "synthesizer", "stt", "tts"]:
                 return self._get_assigned_model_for_role(model_override.lower(), config.settings.default_chat_model)
             return model_override
 
@@ -721,7 +721,7 @@ class ChatRouter:
             "tokens_used": total_tokens,
         }
     
-    def _get_assigned_model_for_role(self, role: str, default_model: str) -> str:
+    def _get_assigned_model_for_role(self, role: str, default_model: str = "") -> str:
         """Resolve assigned provider:model for a specific role from Redis or SQLite."""
         if redis_store.is_connected():
             redis_m = redis_store.get_role_model(role)
@@ -732,7 +732,7 @@ class ChatRouter:
             if role in db_roles:
                 item = db_roles[role]
                 if isinstance(item, dict):
-                    prov = item.get("provider", "openrouter")
+                    prov = item.get("provider", "google")
                     mid = item.get("model_id", "")
                     if mid:
                         return f"{prov}:{mid}"
@@ -740,6 +740,7 @@ class ChatRouter:
                     return item.strip()
         except Exception:
             pass
+        logger.warning(f"[MODEL_ROUTER] No model assigned for role '{role}'. Please configure it in Settings -> Models & API Keys.")
         return default_model
 
     async def _summarize_messages(self, user_msg_id: str, assistant_msg_id: str):

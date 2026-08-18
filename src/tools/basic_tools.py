@@ -717,6 +717,102 @@ class BasicTools:
         except Exception as e:
             return {"success": False, "result": None, "message": f"Failed to query fix history: {e}"}
 
+    # ------------------------------------------------------------------
+    # Amazon S3 Cloud Knowledge Base Tools
+    # ------------------------------------------------------------------
+
+    def s3_list_knowledge_base(self, prefix: str = "") -> Dict[str, Any]:
+        """List all runbooks, incident logs, or postmortems in the Amazon S3 bucket."""
+        try:
+            from src.tools.s3_tools import s3_kb
+            res = s3_kb._list_prefix(prefix)
+            if res.get("success"):
+                return {
+                    "success": True,
+                    "result": res.get("objects", []),
+                    "message": f"Found {res.get('count', 0)} objects in Amazon S3 bucket '{s3_kb.bucket}' (prefix: '{prefix}')."
+                }
+            return {"success": False, "result": [], "message": f"S3 List failed: {res.get('error')}"}
+        except Exception as e:
+            return {"success": False, "result": None, "message": f"Error querying Amazon S3: {e}"}
+
+    def s3_fetch_and_index_runbook(self, runbook_name: str) -> Dict[str, Any]:
+        """Fetch a runbook from Amazon S3 and immediately index it into CockroachDB pgvector."""
+        try:
+            from src.tools.s3_tools import s3_kb
+            clean_name = runbook_name.strip()
+            key = clean_name if clean_name.startswith("runbooks/") else f"runbooks/{clean_name}"
+            res = s3_kb.fetch_and_index(key, self.vector_store)
+            if res.get("success"):
+                return {
+                    "success": True,
+                    "result": {
+                        "key": res.get("key"),
+                        "content_snippet": (res.get("content", "")[:300] + "...") if len(res.get("content", "")) > 300 else res.get("content", ""),
+                        "content": res.get("content", ""),
+                        "indexed_in_cockroachdb": True
+                    },
+                    "message": f"Successfully fetched '{key}' from Amazon S3 and indexed into CockroachDB pgvector store."
+                }
+            return {"success": False, "result": None, "message": f"Failed to fetch runbook from S3: {res.get('error')}"}
+        except Exception as e:
+            return {"success": False, "result": None, "message": f"Error fetching from Amazon S3: {e}"}
+
+    def s3_upload_knowledge_base_object(
+        self,
+        object_type: str,
+        name: str,
+        content: str,
+        tags: Optional[Dict[str, str]] = None
+    ) -> Dict[str, Any]:
+        """Upload a new runbook, incident triage log, or postmortem directly to Amazon S3 and index into CockroachDB."""
+        try:
+            from src.tools.s3_tools import s3_kb
+            obj_type = object_type.strip().lower()
+            if obj_type in ["runbook", "playbook"]:
+                clean_name = name if name.endswith(".md") or name.endswith(".txt") else f"{name}.md"
+                res = s3_kb.upload_runbook(clean_name, content, tags)
+                s3_key = f"runbooks/{clean_name}"
+            elif obj_type in ["incident", "incident_log", "incident-log", "postmortem", "post_mortem", "post-mortem", "resolution"]:
+                clean_name = name.replace(".json", "")
+                res = s3_kb.upload_incident_log(clean_name, content, tags)
+                s3_key = res.get("key", f"incident-logs/{clean_name}.json")
+            else:
+                return {"success": False, "result": None, "message": f"Invalid object_type '{object_type}'. Expected 'runbook' or 'incident'."}
+
+            if res.get("success"):
+                try:
+                    self.vector_store.add_document(
+                        file_path=f"s3://{s3_kb.bucket}/{s3_key}",
+                        content=content
+                    )
+                except Exception:
+                    pass
+
+                return {
+                    "success": True,
+                    "result": {"key": s3_key, "bucket": s3_kb.bucket, "url": res.get("url")},
+                    "message": f"Successfully uploaded {obj_type} to Amazon S3 (s3://{s3_kb.bucket}/{s3_key}) and indexed in CockroachDB pgvector."
+                }
+            return {"success": False, "result": None, "message": f"S3 Upload failed: {res.get('error')}"}
+        except Exception as e:
+            return {"success": False, "result": None, "message": f"Error uploading to Amazon S3: {e}"}
+
+    def s3_sync_knowledge_base(self, prefix: str = "") -> Dict[str, Any]:
+        """Sync all objects from Amazon S3 bucket into CockroachDB pgvector store."""
+        try:
+            from src.tools.s3_tools import s3_kb
+            res = s3_kb.sync_to_vector_store(prefix=prefix, vector_store=self.vector_store)
+            if res.get("success"):
+                return {
+                    "success": True,
+                    "result": res,
+                    "message": f"Synced {res.get('indexed_count', 0)} knowledge base objects from Amazon S3 into CockroachDB pgvector."
+                }
+            return {"success": False, "result": None, "message": f"S3 Sync failed: {res.get('error')}"}
+        except Exception as e:
+            return {"success": False, "result": None, "message": f"Error syncing Amazon S3: {e}"}
+
     def _has_permission(self, action: str, resource: str) -> bool:
         """Check if permission is granted for an action on a resource."""
         permission_key = f"{action}:{resource}"
@@ -1121,6 +1217,60 @@ class BasicTools:
                     }
                 },
                 "returns": "List of fix records"
+            },
+            "s3_list_knowledge_base": {
+                "description": "List all SRE runbooks, incident logs, and postmortems stored in the authoritative Amazon S3 Knowledge Base bucket.",
+                "parameters": {
+                    "prefix": {
+                        "type": "string",
+                        "description": "Optional S3 folder prefix filter e.g. 'runbooks/', 'incident-logs/', or 'postmortems/'",
+                        "required": False
+                    }
+                },
+                "returns": "List of S3 knowledge base objects with key, size, and last modified date"
+            },
+            "s3_fetch_and_index_runbook": {
+                "description": "Fetch a specific diagnostic or remediation runbook from Amazon S3 and immediately index it into CockroachDB pgvector for semantic RAG search.",
+                "parameters": {
+                    "runbook_name": {
+                        "type": "string",
+                        "description": "Name or key of the runbook in S3 e.g. 'db-connection-failures.md' or 'high-cpu-playbook.md'",
+                        "required": True
+                    }
+                },
+                "returns": "Full content of the runbook from S3 and confirmation of pgvector indexing"
+            },
+            "s3_upload_knowledge_base_object": {
+                "description": "Upload a newly created SRE runbook, incident log, or postmortem to Amazon S3 (authoritative source of truth) and index it into CockroachDB pgvector.",
+                "parameters": {
+                    "object_type": {
+                        "type": "string",
+                        "description": "Type of object: 'runbook', 'incident', or 'postmortem'",
+                        "required": True
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Filename or identifier e.g. 'connection-pool-leaks.md' or 'INC-2026-004'",
+                        "required": True
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "Markdown or JSON content to upload to Amazon S3",
+                        "required": True
+                    }
+                },
+                "returns": "S3 object key and storage confirmation"
+            },
+            "s3_sync_knowledge_base": {
+                "description": "Sync all authoritative runbooks and incident logs from Amazon S3 into CockroachDB pgvector store for semantic search.",
+                "parameters": {
+                    "prefix": {
+                        "type": "string",
+                        "description": "Optional S3 folder prefix to sync e.g. 'runbooks/'",
+                        "required": False
+                    }
+                },
+                "returns": "Count of indexed objects in CockroachDB"
             }
         }
 
@@ -1203,6 +1353,12 @@ class ToolManager:
             "get_incidents": self.basic_tools.get_incidents,
             "get_runbooks": self.basic_tools.get_runbooks,
             "get_fix_history": self.basic_tools.get_fix_history,
+
+            # Amazon S3 Knowledge Base Tools
+            "s3_list_knowledge_base": self.basic_tools.s3_list_knowledge_base,
+            "s3_fetch_and_index_runbook": self.basic_tools.s3_fetch_and_index_runbook,
+            "s3_upload_knowledge_base_object": self.basic_tools.s3_upload_knowledge_base_object,
+            "s3_sync_knowledge_base": self.basic_tools.s3_sync_knowledge_base,
         }
     
     def execute_tool(self, tool_name: str, parameters: Dict[str, Any]) -> Dict[str, Any]:

@@ -21,7 +21,6 @@ import {
   BulbOutlined,
   KeyOutlined,
   ExperimentOutlined,
-  ApiOutlined,
   SyncOutlined,
   AlertOutlined,
   CloudSyncOutlined,
@@ -77,7 +76,6 @@ export default function ChatPanel() {
     reasoning: { provider: 'bedrock', model_id: 'anthropic.claude-3-5-sonnet-20241022-v2:0' },
     multimodal: { provider: 'google', model_id: 'gemini-2.0-flash' },
     synthesizer: { provider: 'google', model_id: 'gemini-2.0-flash' },
-    summary: { provider: 'google', model_id: 'gemini-2.5-flash-lite' },
   });
   const [providerCatalog, setProviderCatalog] = useState<Record<string, Array<{id: string; name: string; cost_label: string; is_active: boolean}>>>({});
   const [apiKeys, setApiKeys] = useState<Array<{id: string; provider: string; label: string; masked_value: string; is_active: number}>>([]);
@@ -86,20 +84,11 @@ export default function ChatPanel() {
   const [newKeyLabel, setNewKeyLabel] = useState<string>('');
   const [isTestingKey, setIsTestingKey] = useState<boolean>(false);
 
-  // MCP Settings State Hooks
+  // MCP Settings State Hooks (read-only display of CockroachDB MCP)
   const [mcpServers, setMcpServers] = useState<any[]>([]);
-  const [isMcpModalOpen, setIsMcpModalOpen] = useState(false);
-  const [editingMcp, setEditingMcp] = useState<any | null>(null);
   const [selectedLogsServer, setSelectedLogsServer] = useState<string | null>(null);
   const [serverLogs, setServerLogs] = useState<string[]>([]);
   const [logsDrawerOpen, setLogsDrawerOpen] = useState(false);
-  
-  // MCP Form Hooks
-  const [mcpName, setMcpName] = useState('');
-  const [mcpCommand, setMcpCommand] = useState('');
-  const [mcpArgsStr, setMcpArgsStr] = useState('');
-  const [mcpEnvStr, setMcpEnvStr] = useState('');
-  const [mcpEnabled, setMcpEnabled] = useState(true);
 
   // SRE State Hooks
   const [sreIncidents, setSreIncidents] = useState<any[]>([]);
@@ -694,76 +683,6 @@ export default function ChatPanel() {
     }
   };
 
-  const handleAddMcpServer = async () => {
-    if (!mcpName.trim() || !mcpCommand.trim()) {
-      antdMessage.warning('Please enter a server name and command');
-      return;
-    }
-    
-    let parsedArgs: string[] = [];
-    if (mcpArgsStr.trim()) {
-      try {
-        parsedArgs = JSON.parse(mcpArgsStr.trim());
-        if (!Array.isArray(parsedArgs)) {
-          antdMessage.error('Arguments must be a valid JSON array of strings, e.g. ["-y", "pkg"]');
-          return;
-        }
-      } catch (e) {
-        antdMessage.error('Invalid arguments JSON array formatting, e.g. ["-y", "pkg"]');
-        return;
-      }
-    }
-
-    let parsedEnv: Record<string, string> = {};
-    if (mcpEnvStr.trim()) {
-      try {
-        parsedEnv = JSON.parse(mcpEnvStr.trim());
-        if (typeof parsedEnv !== 'object' || Array.isArray(parsedEnv)) {
-          antdMessage.error('Env variables must be a valid JSON object');
-          return;
-        }
-      } catch (e) {
-        antdMessage.error('Invalid environment variables JSON object formatting, e.g. {"KEY": "VALUE"}');
-        return;
-      }
-    }
-
-    try {
-      const success = await invoke<boolean>('add_mcp_server', {
-        name: mcpName.trim(),
-        command: mcpCommand.trim(),
-        args: parsedArgs,
-        env: parsedEnv,
-        enabled: mcpEnabled
-      });
-      if (success) {
-        antdMessage.success('MCP server configuration saved!');
-        setIsMcpModalOpen(false);
-        setEditingMcp(null);
-        resetMcpForm();
-        loadMcpServers();
-      } else {
-        antdMessage.error('Failed to save MCP server configuration');
-      }
-    } catch (error) {
-      antdMessage.error(`Error saving MCP server: ${error}`);
-    }
-  };
-
-  const handleDeleteMcpServer = async (name: string) => {
-    try {
-      const success = await invoke<boolean>('delete_mcp_server', { name });
-      if (success) {
-        antdMessage.success(`Deleted MCP server: ${name}`);
-        loadMcpServers();
-      } else {
-        antdMessage.error(`Failed to delete MCP server: ${name}`);
-      }
-    } catch (error) {
-      antdMessage.error(`Error deleting MCP server: ${error}`);
-    }
-  };
-
   const loadMcpLogs = async (name: string) => {
     try {
       const logs = await invoke<string[]>('get_mcp_logs', { name });
@@ -773,13 +692,6 @@ export default function ChatPanel() {
     }
   };
 
-  const resetMcpForm = () => {
-    setMcpName('');
-    setMcpCommand('');
-    setMcpArgsStr('');
-    setMcpEnvStr('');
-    setMcpEnabled(true);
-  };
 
   const loadSreData = async () => {
     setIsLoadingSre(true);
@@ -904,50 +816,134 @@ export default function ChatPanel() {
         }}
       >
         <Tabs
-          defaultActiveKey="sre"
+          defaultActiveKey="cockroachdb"
           items={[
             {
-              key: 'sre',
-              label: <span><AlertOutlined /> SRE Console</span>,
+              key: 'cockroachdb',
+              label: <span><AlertOutlined /> CockroachDB SRE</span>,
               children: (
                 <div style={{ marginTop: '8px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                    <Typography.Paragraph type="secondary" style={{ margin: 0, fontSize: '13px' }}>
-                      Monitor production incidents, view runbook playbooks, and inspect the resolution fix history stored in CockroachDB. All items are auto-indexed in pgvector.
-                    </Typography.Paragraph>
+
+                  {/* CockroachDB Cloud Managed MCP Server — Status Card */}
+                  <div style={{ marginBottom: '20px' }}>
+                    <Typography.Text strong style={{ color: '#38bdf8', display: 'block', marginBottom: '10px', fontSize: '13px' }}>
+                      CockroachDB Cloud Managed MCP Server
+                    </Typography.Text>
+                    {mcpServers.length === 0 ? (
+                      <div style={{ color: '#64748b', fontSize: '12px', padding: '10px 0' }}>
+                        No MCP server registered. Configure <code style={{ background: '#0f172a', padding: '1px 5px', borderRadius: '3px', color: '#38bdf8' }}>COCKROACH_MCP_KEY</code> and <code style={{ background: '#0f172a', padding: '1px 5px', borderRadius: '3px', color: '#38bdf8' }}>COCKROACH_CLUSTER_ID</code> in your <code style={{ background: '#0f172a', padding: '1px 5px', borderRadius: '3px', color: '#38bdf8' }}>.env</code> file.
+                      </div>
+                    ) : mcpServers.map(server => (
+                      <Card
+                        key={server.name}
+                        size="small"
+                        style={{ background: 'rgba(255, 255, 255, 0.02)', borderColor: 'rgba(255, 255, 255, 0.08)', marginBottom: '10px' }}
+                        title={
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ color: '#38bdf8', fontWeight: 600 }}>{server.name}</span>
+                            <Tag color={server.status === 'Active' ? 'success' : server.status === 'Error' ? 'error' : 'default'} style={{ margin: 0, fontSize: '11px' }}>
+                              {server.status}
+                            </Tag>
+                          </div>
+                        }
+                        extra={
+                          <div style={{ display: 'flex', gap: '6px' }}>
+                            <Button
+                              size="small"
+                              icon={<FileTextOutlined />}
+                              onClick={() => {
+                                setSelectedLogsServer(server.name);
+                                loadMcpLogs(server.name);
+                                setLogsDrawerOpen(true);
+                              }}
+                              style={{ background: 'rgba(255,255,255,0.05)', color: '#cbd5e1', borderColor: 'rgba(255,255,255,0.1)' }}
+                            >
+                              Logs
+                            </Button>
+                            <Button size="small" icon={<SyncOutlined />} onClick={loadMcpServers} style={{ background: 'rgba(255,255,255,0.05)', color: '#cbd5e1', borderColor: 'rgba(255,255,255,0.1)' }}>
+                              Refresh
+                            </Button>
+                          </div>
+                        }
+                      >
+                        <div style={{ fontSize: '12px', color: '#94a3b8', marginBottom: '8px' }}>
+                          <span style={{ fontWeight: 600, color: '#f8fafc', marginRight: '6px' }}>Endpoint:</span>
+                          <span style={{ fontFamily: 'monospace', background: '#0f172a', padding: '2px 6px', borderRadius: '4px' }}>
+                            {server.command} {(server.args || []).join(' ')}
+                          </span>
+                        </div>
+                        {server.error_message && (
+                          <div style={{ color: '#ef4444', background: 'rgba(239, 68, 68, 0.08)', padding: '6px 10px', borderRadius: '4px', fontSize: '12px', fontFamily: 'monospace', marginBottom: '10px' }}>
+                            Error: {server.error_message}
+                          </div>
+                        )}
+                        {server.status === 'Active' && server.tools.length > 0 && (
+                          <Collapse size="small" ghost style={{ background: 'rgba(0,0,0,0.2)', border: 'none' }} items={[{
+                            key: 'tools',
+                            label: <span style={{ color: '#cbd5e1', fontSize: '12px' }}>Available Tools ({server.tools.length})</span>,
+                            children: (
+                              <List size="small" dataSource={server.tools} renderItem={(tool: any) => (
+                                <List.Item style={{ padding: '6px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                                  <div style={{ width: '100%' }}>
+                                    <Tag color="purple" style={{ fontFamily: 'monospace', fontSize: '11px' }}>
+                                      mcp_{server.name}_{tool.name}
+                                    </Tag>
+                                    <span style={{ color: '#cbd5e1', fontSize: '12px', display: 'block', marginTop: '4px' }}>
+                                      {tool.description}
+                                    </span>
+                                  </div>
+                                </List.Item>
+                              )} />
+                            )
+                          }]} />
+                        )}
+                      </Card>
+                    ))}
+                  </div>
+
+                  {/* Amazon S3 Knowledge Base Sync */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', paddingTop: '16px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                    <div>
+                      <Typography.Text strong style={{ color: '#38bdf8', display: 'block', fontSize: '13px' }}>
+                        Amazon S3 Knowledge Base
+                      </Typography.Text>
+                      <Typography.Text type="secondary" style={{ fontSize: '12px' }}>
+                        Bucket: cockroachsre-knowledge-base (ap-south-1) — Sync to CockroachDB pgvector
+                      </Typography.Text>
+                    </div>
                     <div style={{ display: 'flex', gap: '8px' }}>
-                      <Button 
-                        size="small" 
-                        icon={<CloudSyncOutlined />} 
+                      <Button
+                        size="small"
+                        icon={<CloudSyncOutlined />}
                         onClick={handleSyncFromS3}
                         loading={isSyncingS3}
                         style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', borderColor: 'rgba(56, 189, 248, 0.3)' }}
                       >
-                        Sync from AWS S3
+                        Sync S3 to CockroachDB
                       </Button>
-                      <Button 
-                        size="small" 
-                        icon={<SyncOutlined />} 
+                      <Button
+                        size="small"
+                        icon={<SyncOutlined />}
                         onClick={loadSreData}
                         loading={isLoadingSre}
                         style={{ background: 'rgba(255, 255, 255, 0.05)', color: '#f8fafc', borderColor: 'rgba(255, 255, 255, 0.1)' }}
                       >
                         Refresh
                       </Button>
-                      <Button 
-                        type="primary" 
-                        size="small" 
+                      <Button
+                        type="primary"
+                        size="small"
                         danger
-                        icon={<AlertOutlined />} 
+                        icon={<AlertOutlined />}
                         onClick={() => setIsIncidentModalOpen(true)}
                         style={{ background: '#dc2626', borderColor: '#dc2626' }}
                       >
                         Ingest Incident
                       </Button>
-                      <Button 
-                        type="primary" 
-                        size="small" 
-                        icon={<PlusOutlined />} 
+                      <Button
+                        type="primary"
+                        size="small"
+                        icon={<PlusOutlined />}
                         onClick={() => setIsRunbookModalOpen(true)}
                         style={{ background: '#0284c7', borderColor: '#0284c7' }}
                       >
@@ -956,13 +952,18 @@ export default function ChatPanel() {
                     </div>
                   </div>
 
-                  <Collapse 
-                    defaultActiveKey={['incidents', 'runbooks']} 
-                    ghost 
+                  {/* CockroachDB Persistent Memory Explorer */}
+                  <Typography.Text strong style={{ color: '#38bdf8', display: 'block', marginBottom: '10px', fontSize: '13px' }}>
+                    CockroachDB Persistent Memory
+                  </Typography.Text>
+
+                  <Collapse
+                    defaultActiveKey={['incidents', 'runbooks']}
+                    ghost
                     style={{ background: 'transparent' }}
                   >
-                    <Collapse.Panel 
-                      header={<span style={{ color: '#ef4444', fontWeight: 600 }}>Active Production Incidents ({sreIncidents.length})</span>} 
+                    <Collapse.Panel
+                      header={<span style={{ color: '#ef4444', fontWeight: 600 }}>Active Production Incidents ({sreIncidents.length})</span>}
                       key="incidents"
                     >
                       <Table
@@ -1013,8 +1014,8 @@ export default function ChatPanel() {
                       />
                     </Collapse.Panel>
 
-                    <Collapse.Panel 
-                      header={<span style={{ color: '#38bdf8', fontWeight: 600 }}>SRE Diagnostic Playbooks & Runbooks ({sreRunbooks.length})</span>} 
+                    <Collapse.Panel
+                      header={<span style={{ color: '#38bdf8', fontWeight: 600 }}>SRE Diagnostic Playbooks & Runbooks ({sreRunbooks.length})</span>}
                       key="runbooks"
                     >
                       <Table
@@ -1064,8 +1065,8 @@ export default function ChatPanel() {
                       />
                     </Collapse.Panel>
 
-                    <Collapse.Panel 
-                      header={<span style={{ color: '#4ade80', fontWeight: 600 }}>Resolution & Fix Actions History ({sreFixHistory.length})</span>} 
+                    <Collapse.Panel
+                      header={<span style={{ color: '#4ade80', fontWeight: 600 }}>Resolution & Fix Actions History ({sreFixHistory.length})</span>}
                       key="history"
                     >
                       <Table
@@ -1112,162 +1113,6 @@ export default function ChatPanel() {
               )
             },
             {
-              key: 'mcp',
-              label: <span><ApiOutlined /> MCP Servers</span>,
-              children: (
-                <div style={{ marginTop: '8px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                    <Typography.Paragraph type="secondary" style={{ margin: 0, fontSize: '13px' }}>
-                      Configure stdio-based Model Context Protocol (MCP) servers. Exposed tools are automatically namespaced under `mcp_[server]_[tool]` and available to both orchestrator and sub-agents.
-                    </Typography.Paragraph>
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <Button 
-                        size="small" 
-                        icon={<SyncOutlined />} 
-                        onClick={loadMcpServers}
-                        style={{ background: 'rgba(255, 255, 255, 0.05)', color: '#f8fafc', borderColor: 'rgba(255, 255, 255, 0.1)' }}
-                      >
-                        Refresh
-                      </Button>
-                      <Button 
-                        type="primary" 
-                        size="small" 
-                        icon={<PlusOutlined />} 
-                        onClick={() => { resetMcpForm(); setEditingMcp(null); setIsMcpModalOpen(true); }}
-                        style={{ background: '#0284c7', borderColor: '#0284c7' }}
-                      >
-                        Add Server
-                      </Button>
-                    </div>
-                  </div>
-
-                  <List
-                    dataSource={mcpServers}
-                    locale={{ emptyText: 'No MCP servers configured. Add one to extend your agent capabilities!' }}
-                    renderItem={server => {
-                      const envKeys = Object.keys(server.env || {});
-                      return (
-                        <Card
-                          size="small"
-                          style={{
-                            background: 'rgba(255, 255, 255, 0.02)',
-                            borderColor: 'rgba(255, 255, 255, 0.08)',
-                            marginBottom: '12px'
-                          }}
-                          title={
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <span style={{ color: '#38bdf8', fontWeight: 600 }}>{server.name}</span>
-                                <Tag color={server.status === 'Active' ? 'success' : server.status === 'Error' ? 'error' : 'default'} style={{ margin: 0, fontSize: '11px' }}>
-                                  ● {server.status}
-                                </Tag>
-                              </div>
-                              <div style={{ display: 'flex', gap: '6px' }}>
-                                <Button 
-                                  size="small"
-                                  icon={<FileTextOutlined />}
-                                  onClick={() => {
-                                    setSelectedLogsServer(server.name);
-                                    loadMcpLogs(server.name);
-                                    setLogsDrawerOpen(true);
-                                  }}
-                                  style={{ background: 'rgba(255,255,255,0.05)', color: '#f8fafc', borderColor: 'rgba(255,255,255,0.1)' }}
-                                >
-                                  Logs
-                                </Button>
-                                <Button
-                                  size="small"
-                                  icon={<EditOutlined />}
-                                  onClick={() => {
-                                    setEditingMcp(server);
-                                    setMcpName(server.name);
-                                    setMcpCommand(server.command);
-                                    setMcpArgsStr(JSON.stringify(server.args));
-                                    setMcpEnvStr(JSON.stringify(server.env, null, 2));
-                                    setMcpEnabled(server.enabled);
-                                    setIsMcpModalOpen(true);
-                                  }}
-                                  style={{ background: 'rgba(255,255,255,0.05)', color: '#e2e8f0', borderColor: 'rgba(255,255,255,0.1)' }}
-                                >
-                                  Edit
-                                </Button>
-                                <Popconfirm
-                                  title="Delete this MCP server configuration?"
-                                  onConfirm={() => handleDeleteMcpServer(server.name)}
-                                  okText="Delete"
-                                  cancelText="Cancel"
-                                >
-                                  <Button size="small" icon={<DeleteOutlined />} danger>
-                                    Delete
-                                  </Button>
-                                </Popconfirm>
-                              </div>
-                            </div>
-                          }
-                        >
-                          <div style={{ fontSize: '12px', color: '#94a3b8', marginBottom: '8px' }}>
-                            <span style={{ fontWeight: 600, color: '#f8fafc', marginRight: '6px' }}>Command:</span>
-                            <span style={{ fontFamily: 'monospace', background: '#0f172a', padding: '2px 6px', borderRadius: '4px' }}>
-                              {server.command} {server.args.join(' ')}
-                            </span>
-                          </div>
-
-                          {envKeys.length > 0 && (
-                            <div style={{ fontSize: '12px', color: '#94a3b8', marginBottom: '12px', display: 'flex', flexWrap: 'wrap', gap: '4px', alignItems: 'center' }}>
-                              <span style={{ fontWeight: 600, color: '#f8fafc', marginRight: '4px' }}>Env Keys:</span>
-                              {envKeys.map(k => <Tag key={k} color="blue" style={{ fontSize: '10px', margin: 0 }}>{k}</Tag>)}
-                            </div>
-                          )}
-
-                          {server.error_message && (
-                            <div style={{ color: '#ef4444', background: 'rgba(239, 68, 68, 0.08)', padding: '6px 10px', borderRadius: '4px', fontSize: '12px', fontFamily: 'monospace', marginBottom: '12px' }}>
-                              Error: {server.error_message}
-                            </div>
-                          )}
-
-                          {server.status === 'Active' && server.tools.length > 0 ? (
-                            <Collapse
-                              size="small"
-                              style={{ background: 'rgba(0,0,0,0.2)', border: 'none' }}
-                              ghost
-                              items={[
-                                {
-                                  key: 'tools',
-                                  label: <span style={{ color: '#cbd5e1', fontSize: '12px' }}>Discovered Tools ({server.tools.length})</span>,
-                                  children: (
-                                    <List
-                                      size="small"
-                                      dataSource={server.tools}
-                                      renderItem={(tool: any) => (
-                                        <List.Item style={{ padding: '6px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                                          <div style={{ width: '100%' }}>
-                                            <Tag color="purple" style={{ fontFamily: 'monospace', fontSize: '11px' }}>
-                                              mcp_{server.name}_{tool.name}
-                                            </Tag>
-                                            <span style={{ color: '#cbd5e1', fontSize: '12px', display: 'block', marginTop: '4px' }}>
-                                              {tool.description}
-                                            </span>
-                                          </div>
-                                        </List.Item>
-                                      )}
-                                    />
-                                  )
-                                }
-                              ]}
-                            />
-                          ) : (
-                            <div style={{ color: '#64748b', fontSize: '11px' }}>
-                              {server.status === 'Active' ? 'No tools exposed by this server.' : 'Exposed tools will be listed here when active.'}
-                            </div>
-                          )}
-                        </Card>
-                      );
-                    }}
-                  />
-                </div>
-              )
-            },
-            {
               key: 'models',
               label: <span><KeyOutlined /> Models & API Keys</span>,
               children: (
@@ -1288,7 +1133,6 @@ export default function ChatPanel() {
                       { role: 'reasoning', label: 'Reasoning Sub-Agent', desc: 'Architecture, logic & edge-case specialist' },
                       { role: 'multimodal', label: 'Multimodal Specialist', desc: 'Image, media & document analyzer' },
                       { role: 'synthesizer', label: 'Consensus Synthesizer', desc: 'Merges multi-model team outputs' },
-                      { role: 'summary', label: 'Background Summarizer & Memory', desc: 'Context compression & fact extraction' },
                     ].map(r => {
                       const roleConfig = roleModels[r.role] || { provider: 'openrouter', model_id: '' };
                       const currentProvider = roleConfig.provider || 'openrouter';
@@ -1450,22 +1294,22 @@ export default function ChatPanel() {
             },
             {
               key: 'memories',
-              label: <span><BulbOutlined /> Memories & Persona</span>,
+              label: <span><BulbOutlined /> SRE Guardrails & Knowledge</span>,
               children: (
                 <div style={{ marginTop: '8px' }}>
                   <Typography.Paragraph type="secondary" style={{ marginBottom: '16px', fontSize: '13px' }}>
-                    Global memories are retained across all chat sessions and injected into RAG context assembly. You can add custom global memories or edit/delete existing ones.
+                    SRE operational policies, cluster rules, and persistent guardrails. Stored in CockroachDB and semantically injected into prompt context via pgvector on every query.
                   </Typography.Paragraph>
 
-                  {/* Add Memory Form */}
+                  {/* Add SRE Policy Form */}
                   <Card 
                     size="small" 
-                    title="Add New Global Memory" 
+                    title="Add SRE Policy / Cluster Rule" 
                     style={{ background: 'rgba(255, 255, 255, 0.03)', borderColor: 'rgba(255, 255, 255, 0.1)', marginBottom: '20px' }}
                   >
                     <Input.TextArea
                       rows={3}
-                      placeholder="e.g., Remember that I prefer dark mode, my API port is 8000, and I use Python 3.12."
+                      placeholder="e.g., Primary database is CockroachDB Serverless in AWS ap-south-1. Always check cluster replication status before suggesting node restarts. Never execute DROP statements without confirmation."
                       value={newMemoryContent}
                       onChange={e => setNewMemoryContent(e.target.value)}
                       style={{ marginBottom: '12px', background: '#0f172a', color: '#f8fafc', borderColor: '#334155' }}
@@ -1477,19 +1321,19 @@ export default function ChatPanel() {
                         onClick={handleAddMemory}
                         style={{ background: '#0284c7', borderColor: '#0284c7' }}
                       >
-                        Save Memory
+                        Save Policy
                       </Button>
                     </div>
                   </Card>
 
-                  {/* Memory List */}
+                  {/* Policy List */}
                   <Typography.Text strong style={{ color: '#94a3b8', display: 'block', marginBottom: '8px' }}>
-                    Stored Memories ({memories.length})
+                    Active SRE Policies & Guardrails ({memories.length})
                   </Typography.Text>
 
                   <List
                     dataSource={memories}
-                    locale={{ emptyText: 'No stored memories found. Add one above or ask the agent to remember something!' }}
+                    locale={{ emptyText: 'No SRE policies configured yet. Add an operational rule above to guide the SRE agent.' }}
                     renderItem={item => (
                       <List.Item
                         style={{ padding: '12px', borderBottom: '1px solid rgba(255, 255, 255, 0.08)' }}
@@ -1499,7 +1343,7 @@ export default function ChatPanel() {
                           ) : (
                             <Button icon={<EditOutlined />} type="link" onClick={() => { setEditingMemoryId(item.id); setEditingContent(item.content); }}>Edit</Button>
                           ),
-                          <Popconfirm title="Delete memory?" onConfirm={() => handleDeleteMemory(item.id)}>
+                          <Popconfirm title="Delete SRE policy?" onConfirm={() => handleDeleteMemory(item.id)}>
                             <Button icon={<DeleteOutlined />} type="link" danger>Delete</Button>
                           </Popconfirm>
                         ]}
@@ -1675,80 +1519,7 @@ export default function ChatPanel() {
         </div>
       </Modal>
 
-      {/* Add / Edit MCP Server Modal */}
-      <Modal
-        title={editingMcp ? "Edit MCP Server" : "Add MCP Server"}
-        open={isMcpModalOpen}
-        onOk={handleAddMcpServer}
-        onCancel={() => { setIsMcpModalOpen(false); setEditingMcp(null); resetMcpForm(); }}
-        okText="Save Config"
-        width={540}
-        styles={{
-          mask: { backdropFilter: 'blur(4px)', background: 'rgba(0, 0, 0, 0.6)' },
-          body: { background: '#0f172a', color: '#f8fafc', padding: '16px 20px' },
-          header: { background: 'transparent', borderBottom: '1px solid rgba(255, 255, 255, 0.08)' }
-        }}
-      >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '12px' }}>
-          <div>
-            <Typography.Text style={{ color: '#cbd5e1', fontSize: '13px', display: 'block', marginBottom: '4px' }}>Server Name</Typography.Text>
-            <Input 
-              placeholder="e.g. notion" 
-              value={mcpName} 
-              onChange={e => setMcpName(e.target.value)} 
-              disabled={!!editingMcp}
-              style={{ background: '#1e293b', color: '#f8fafc', borderColor: '#334155' }}
-            />
-          </div>
-
-          <div>
-            <Typography.Text style={{ color: '#cbd5e1', fontSize: '13px', display: 'block', marginBottom: '4px' }}>Execution Command</Typography.Text>
-            <Input 
-              placeholder="e.g. npx, uvx, python" 
-              value={mcpCommand} 
-              onChange={e => setMcpCommand(e.target.value)} 
-              style={{ background: '#1e293b', color: '#f8fafc', borderColor: '#334155' }}
-            />
-          </div>
-
-          <div>
-            <Typography.Text style={{ color: '#cbd5e1', fontSize: '13px', display: 'block', marginBottom: '4px' }}>Arguments (JSON Array)</Typography.Text>
-            <Input.TextArea 
-              rows={2}
-              placeholder='e.g. ["-y", "@modelcontextprotocol/server-notion"]' 
-              value={mcpArgsStr} 
-              onChange={e => setMcpArgsStr(e.target.value)} 
-              style={{ background: '#1e293b', color: '#f8fafc', borderColor: '#334155', fontFamily: 'monospace' }}
-            />
-          </div>
-
-          <div>
-            <Typography.Text style={{ color: '#cbd5e1', fontSize: '13px', display: 'block', marginBottom: '4px' }}>Environment Variables (JSON Object)</Typography.Text>
-            <Input.TextArea 
-              rows={4}
-              placeholder='e.g. {&#10;  "NOTION_API_KEY": "secret_..."&#10;}' 
-              value={mcpEnvStr} 
-              onChange={e => setMcpEnvStr(e.target.value)} 
-              style={{ background: '#1e293b', color: '#f8fafc', borderColor: '#334155', fontFamily: 'monospace' }}
-            />
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <input 
-              type="checkbox" 
-              id="mcp_enabled_checkbox" 
-              checked={mcpEnabled} 
-              onChange={e => setMcpEnabled(e.target.checked)} 
-              style={{ accentColor: '#38bdf8' }}
-            />
-            <label htmlFor="mcp_enabled_checkbox" style={{ color: '#cbd5e1', fontSize: '13px', cursor: 'pointer' }}>
-              Enable server process instantly on save
-            </label>
-          </div>
-        </div>
-      </Modal>
-
-      {/* MCP Logs Drawer Modal */}
+      {/* MCP Logs Modal */}
       <Modal
         title={
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginRight: '24px' }}>
@@ -2371,9 +2142,6 @@ export default function ChatPanel() {
                 options={[
                   { value: 'auto', label: 'Auto (Orchestrator)' },
                   { value: 'collaborative', label: 'Multi-Model Team' },
-                  { value: 'coding', label: 'Coding Specialist' },
-                  { value: 'reasoning', label: 'Reasoning Specialist' },
-                  { value: 'multimodal', label: 'Vision Specialist' },
                 ]}
               />
               <Tooltip title="Attach Document / Code File (RAG Vector Memory)">

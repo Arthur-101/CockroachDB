@@ -246,6 +246,48 @@ class ProviderRouter:
                 ]
             return models_list
 
+        # 7. OpenRouter Catalog
+        elif provider_lower in ["openrouter"]:
+            models_list = []
+            if api_key:
+                try:
+                    headers = {
+                        "Authorization": f"Bearer {api_key.strip()}",
+                        "User-Agent": "AegisDB-SRE-Copilot/1.0"
+                    }
+                    req = urllib.request.Request("https://openrouter.ai/api/v1/models", headers=headers)
+                    loop = asyncio.get_event_loop()
+                    res = await loop.run_in_executor(None, lambda: urllib.request.urlopen(req, timeout=10.0))
+                    data = json.loads(res.read().decode("utf-8"))
+                    for m in data.get("data", []):
+                        m_id = m.get("id", "")
+                        m_name = m.get("name") or m_id
+                        pricing = m.get("pricing", {})
+                        prompt_cost = float(pricing.get("prompt", 0)) * 1_000_000
+                        completion_cost = float(pricing.get("completion", 0)) * 1_000_000
+                        cost_label = f"${prompt_cost:.2f}/1M in, ${completion_cost:.2f}/1M out"
+                        models_list.append({
+                            "id": m_id,
+                            "name": m_name,
+                            "provider": "openrouter",
+                            "cost_label": cost_label,
+                            "is_active": True
+                        })
+                except Exception as e:
+                    logger.debug(f"OpenRouter live model fetch notice: {e}")
+
+            if not models_list:
+                models_list = [
+                    {"id": "deepseek/deepseek-chat", "name": "DeepSeek V3 (Chat)", "provider": "openrouter", "cost_label": "$0.14/1M in, $0.28/1M out", "is_active": True},
+                    {"id": "deepseek/deepseek-r1", "name": "DeepSeek R1 (Reasoning)", "provider": "openrouter", "cost_label": "$0.55/1M in, $2.19/1M out", "is_active": True},
+                    {"id": "qwen/qwen-2.5-coder-32b-instruct", "name": "Qwen 2.5 Coder 32B", "provider": "openrouter", "cost_label": "$0.07/1M in, $0.16/1M out", "is_active": True},
+                    {"id": "meta-llama/llama-3.3-70b-instruct", "name": "Llama 3.3 70B Instruct", "provider": "openrouter", "cost_label": "$0.12/1M in, $0.30/1M out", "is_active": True},
+                    {"id": "mistralai/mistral-large-2411", "name": "Mistral Large 2411", "provider": "openrouter", "cost_label": "$2.00/1M in, $6.00/1M out", "is_active": True},
+                    {"id": "anthropic/claude-3.5-sonnet", "name": "Claude 3.5 Sonnet", "provider": "openrouter", "cost_label": "$3.00/1M in, $15.00/1M out", "is_active": True},
+                    {"id": "openai/gpt-4o", "name": "GPT-4o", "provider": "openrouter", "cost_label": "$2.50/1M in, $10.00/1M out", "is_active": True},
+                ]
+            return models_list
+
         return []
 
     async def test_provider_key(self, provider: str, key_value: Optional[str] = None, model_id: Optional[str] = None) -> Dict[str, Any]:
@@ -349,6 +391,22 @@ class ProviderRouter:
                     "details": f"{model_count} models available in Mistral catalog"
                 }
 
+            elif provider_lower == "openrouter":
+                headers = {
+                    "Authorization": f"Bearer {key_str}",
+                    "User-Agent": "AegisDB-SRE-Copilot/1.0"
+                }
+                req = urllib.request.Request("https://openrouter.ai/api/v1/auth/key", headers=headers)
+                loop = asyncio.get_event_loop()
+                res = await loop.run_in_executor(None, lambda: urllib.request.urlopen(req, timeout=10.0))
+                data = json.loads(res.read().decode("utf-8"))
+                label = data.get("data", {}).get("label") or "OpenRouter Account"
+                return {
+                    "success": True,
+                    "message": f"OpenRouter API Key verified successfully! ({label})",
+                    "details": f"Key verified. Account: {label}"
+                }
+
             else:
                 return {"success": False, "error": f"Unsupported provider: {provider}"}
         except urllib.error.HTTPError as http_err:
@@ -403,6 +461,8 @@ class ProviderRouter:
             return os.getenv("GROQ_API_KEY")
         elif provider_lower in ["mistral", "mistralai", "codestral"]:
             return os.getenv("MISTRAL_API_KEY")
+        elif provider_lower in ["openrouter"]:
+            return os.getenv("OPENROUTER_API_KEY")
             
         return None
 
@@ -421,7 +481,7 @@ class ProviderRouter:
         provider_name = "google"  # Default fallback if no prefix
         clean_model = raw_model
 
-        known_providers = ["google", "gemini", "openai", "anthropic", "claude", "groq", "mistral", "mistralai", "codestral", "bedrock"]
+        known_providers = ["google", "gemini", "openai", "anthropic", "claude", "groq", "mistral", "mistralai", "codestral", "bedrock", "openrouter"]
         if ":" in raw_model:
             parts = raw_model.split(":", 1)
             prov = parts[0].lower().strip()
@@ -448,6 +508,9 @@ class ProviderRouter:
         elif raw_model.startswith("bedrock/"):
             provider_name = "bedrock"
             clean_model = raw_model.replace("bedrock/", "")
+        elif raw_model.startswith("openrouter/"):
+            provider_name = "openrouter"
+            clean_model = raw_model.replace("openrouter/", "")
 
         provider_name = provider_name.lower().strip()
         max_attempts = 5
@@ -520,6 +583,17 @@ class ProviderRouter:
                     }
                 return await self._generate_bedrock_direct(messages, clean_model, credentials, temperature, max_tokens)
 
+            elif provider_name in ["openrouter"]:
+                api_key = self.get_api_key_for_provider("openrouter")
+                if not api_key:
+                    return {
+                        "success": False,
+                        "error": "No OpenRouter API Key found. Please add your OpenRouter API key in Settings -> Models & API Keys.",
+                        "content": "[ERROR] No OpenRouter API Key found. Please add your OpenRouter API key in Settings -> Models & API Keys (or set OPENROUTER_API_KEY in .env) to use OpenRouter.",
+                        "model_id": f"openrouter/{clean_model}"
+                    }
+                return await self._generate_openrouter_direct(messages, clean_model, api_key, temperature, max_tokens, tools)
+
             else:
                 return {
                     "success": False,
@@ -550,6 +624,74 @@ class ProviderRouter:
 
 
     # ── Private Provider Direct HTTP Implementations ─────────────────────────────
+
+    async def _generate_openrouter_direct(
+        self,
+        messages: List[Dict[str, Any]],
+        model_name: str,
+        api_key: str,
+        temperature: float,
+        max_tokens: int,
+        tools: Optional[List[Dict[str, Any]]] = None
+    ) -> Dict[str, Any]:
+        """Direct HTTP call to OpenRouter API. Supports tool calling and token usage tracking."""
+        from src.models.openrouter_client import extract_text_content
+        formatted_messages = []
+        for m in messages:
+            raw_content = m.get("content")
+            if isinstance(raw_content, list):
+                safe_content = [
+                    block if isinstance(block, dict) and block.get("type") in ("text", "image_url") else {"type": "text", "text": extract_text_content(block)}
+                    for block in raw_content
+                ]
+            else:
+                safe_content = extract_text_content(raw_content)
+            msg_item = {
+                "role": m.get("role", "user"),
+                "content": safe_content
+            }
+            if m.get("tool_calls"):
+                msg_item["tool_calls"] = m.get("tool_calls")
+            if m.get("tool_call_id"):
+                msg_item["tool_call_id"] = m.get("tool_call_id")
+            if m.get("name"):
+                msg_item["name"] = m.get("name")
+            formatted_messages.append(msg_item)
+
+        headers = {
+            "Authorization": f"Bearer {api_key.strip()}",
+            "HTTP-Referer": "https://github.com/cockroachai",
+            "X-Title": "AegisDB Autonomous SRE Copilot",
+            "Content-Type": "application/json"
+        }
+        body: Dict[str, Any] = {
+            "model": model_name,
+            "messages": formatted_messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens
+        }
+        if tools:
+            body["tools"] = tools
+
+        try:
+            payload = json.dumps(body).encode("utf-8")
+            req = urllib.request.Request("https://openrouter.ai/api/v1/chat/completions", data=payload, headers=headers, method="POST")
+            loop = asyncio.get_event_loop()
+            res = await loop.run_in_executor(None, lambda: urllib.request.urlopen(req, timeout=45.0))
+            data = json.loads(res.read().decode("utf-8"))
+            
+            msg = data.get("choices", [{}])[0].get("message", {})
+            content = extract_text_content(msg.get("content", ""))
+            tool_calls = msg.get("tool_calls", None)
+            tokens = data.get("usage", {}).get("total_tokens", 0)
+            return {"content": content, "tool_calls": tool_calls, "model_id": f"openrouter/{model_name}", "tokens_used": tokens, "success": True}
+        except urllib.error.HTTPError as http_err:
+            err_body = http_err.read().decode("utf-8") if http_err.fp else str(http_err)
+            logger.error(f"OpenRouter Direct API HTTP {http_err.code}: {err_body}")
+            return {"success": False, "error": f"OpenRouter HTTP {http_err.code}: {err_body}", "model_id": f"openrouter/{model_name}"}
+        except Exception as e:
+            logger.error(f"OpenRouter Direct API error: {e}")
+            return {"success": False, "error": str(e), "model_id": f"openrouter/{model_name}"}
 
     async def _generate_openai_direct(
         self,

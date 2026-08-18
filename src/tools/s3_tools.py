@@ -27,7 +27,6 @@ logger = logging.getLogger(__name__)
 DEFAULT_BUCKET = os.environ.get("S3_BUCKET_NAME", "cockroachsre-knowledge-base")
 RUNBOOK_PREFIX = "runbooks/"
 INCIDENT_PREFIX = "incident-logs/"
-POSTMORTEM_PREFIX = "postmortems/"
 
 
 def _get_s3_client():
@@ -44,9 +43,9 @@ class S3KnowledgeBase:
     """
     Amazon S3 knowledge base manager.
 
-    S3 acts as the authoritative source of truth for runbooks,
-    incident logs, and postmortems. Content is fetched from S3 and
-    indexed into CockroachDB's distributed vector store for semantic search.
+    S3 acts as the authoritative source of truth for runbooks and incident logs.
+    Content is fetched from S3 and indexed into CockroachDB's distributed vector store
+    for semantic search.
     """
 
     def __init__(self, bucket: str = DEFAULT_BUCKET):
@@ -69,8 +68,9 @@ class S3KnowledgeBase:
         content: str,
         tags: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
-        """Upload a runbook markdown/text file to S3."""
-        key = f"{RUNBOOK_PREFIX}{name}"
+        """Upload a runbook markdown/text file to S3 under runbooks/."""
+        clean_name = name if name.endswith(".md") or name.endswith(".txt") else f"{name}.md"
+        key = f"{RUNBOOK_PREFIX}{clean_name}"
         return self._upload(key, content, content_type="text/markdown", tags=tags)
 
     def upload_incident_log(
@@ -79,9 +79,10 @@ class S3KnowledgeBase:
         content: str,
         tags: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
-        """Upload a JSON or text incident log to S3."""
+        """Upload a JSON or text incident log to S3 under incident-logs/<date>/."""
         date_prefix = datetime.utcnow().strftime("%Y-%m-%d")
-        key = f"{INCIDENT_PREFIX}{date_prefix}/{incident_id}.json"
+        clean_id = incident_id.replace(".json", "")
+        key = f"{INCIDENT_PREFIX}{date_prefix}/{clean_id}.json"
         return self._upload(key, content, content_type="application/json", tags=tags)
 
     def upload_postmortem(
@@ -90,9 +91,11 @@ class S3KnowledgeBase:
         content: str,
         tags: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
-        """Upload a postmortem document to S3."""
-        key = f"{POSTMORTEM_PREFIX}{name}"
-        return self._upload(key, content, content_type="text/markdown", tags=tags)
+        """Upload a postmortem or resolution document under incident-logs/<date>/."""
+        date_prefix = datetime.utcnow().strftime("%Y-%m-%d")
+        clean_name = name if name.endswith(".json") else f"{name}.json"
+        key = f"{INCIDENT_PREFIX}{date_prefix}/{clean_name}"
+        return self._upload(key, content, content_type="application/json", tags=tags)
 
     def _upload(
         self,
@@ -251,8 +254,8 @@ class S3KnowledgeBase:
                 logger.info(f"Indexed s3://{self.bucket}/{key} into CockroachDB pgvector")
 
                 try:
-                    from src.memory.cockroach_store import CockroachMemoryStore
-                    db = CockroachMemoryStore()
+                    from src.memory.cockroach_store import SQLiteMemoryStore
+                    db = SQLiteMemoryStore()
                     if key.startswith("runbooks/") and key.endswith(".md"):
                         title = key.split("/")[-1].replace(".md", "").replace("-", " ").title()
                         first_line = content.split("\n")[0]
@@ -264,20 +267,42 @@ class S3KnowledgeBase:
                             service_name="cockroachdb",
                             author="AWS S3 Sync",
                         )
-                    elif key.startswith("incidents/"):
+                    elif (key.startswith("incident-logs/") or key.startswith("incidents/")) and key.endswith(".json"):
                         try:
                             import json
                             inc_data = json.loads(content)
                             if isinstance(inc_data, dict):
-                                db.create_incident(
-                                    title=inc_data.get("title", key),
-                                    description=json.dumps(inc_data.get("symptoms", inc_data.get("root_cause", ""))),
+                                inc_id = inc_data.get("incident_id") or key.split("/")[-1].replace(".json", "")
+                                title = inc_data.get("title", inc_id)
+                                symptoms = inc_data.get("symptoms", [])
+                                desc = "\n".join(symptoms) if isinstance(symptoms, list) else str(symptoms)
+                                if not desc and inc_data.get("root_cause"):
+                                    desc = str(inc_data.get("root_cause"))
+
+                                db.save_incident(
+                                    title=title,
+                                    description=desc,
                                     severity=inc_data.get("severity", "P2"),
                                     service_name=inc_data.get("affected_service", "cockroachdb"),
                                     metadata=inc_data,
+                                    incident_id=inc_id,
                                 )
-                        except Exception:
-                            pass
+
+                                resolution = inc_data.get("resolution")
+                                if resolution:
+                                    db.save_fix_history(
+                                        incident_id=inc_id,
+                                        action_taken=str(resolution),
+                                        engineer_notes=str(inc_data.get("root_cause", "")),
+                                        runbook_id=inc_data.get("runbook_used"),
+                                        success=True
+                                    )
+                                    db.resolve_incident(
+                                        incident_id=inc_id,
+                                        root_cause=str(inc_data.get("root_cause", ""))
+                                    )
+                        except Exception as json_err:
+                            logger.debug(f"Incident JSON parse note: {json_err}")
                 except Exception as ex:
                     logger.debug(f"Relational sync note: {ex}")
             except Exception as e:

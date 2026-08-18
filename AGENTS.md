@@ -360,6 +360,43 @@ data/
   - Aligned project tracker targets with Notion master hub **CockroachAI** (Page ID: `3b8c8b7b-66a5-809d-bfeb-f380a7bcb0e4`) and its sub-pages.
   - **Header Status Badge Sizing Fix (`ui/src/global.css`, `ChatPanel.tsx`)**: Resolved Ant Design `.ant-layout-header` default line-height inheritance stretching the "Ready" and "Redis Live" pill badges vertically. Fixed with `.ant-layout-header { line-height: normal !important; }`, explicit `height: 22px`, `lineHeight: 16px`, and `whiteSpace: nowrap`.
 
+- **Settings Modal Tab Consolidation — SRE + MCP Merged (Aug 18, 2026)**:
+  - Merged the former "SRE Console" (Tab 0) and "MCP Servers" (Tab 1) into a single unified tab: **"CockroachDB SRE"** (no emoji, key: `cockroachdb`).
+  - New tab layout (top-to-bottom): **CockroachDB Cloud Managed MCP Server** status card (connection status, endpoint display, tool list collapsible, **Logs** inspector button & modal) → **Amazon S3 Knowledge Base** controls (Sync S3 to CockroachDB, Refresh, Ingest Incident, Add Runbook) → **CockroachDB Persistent Memory** (Active Incidents table, SRE Playbooks/Runbooks table, Resolution Fix History table).
+  - Retained **MCP Server Logs** debugging modal (`serverLogs`, `selectedLogsServer`, `logsDrawerOpen`, `loadMcpLogs`) specifically for debugging CockroachDB MCP server output and errors.
+  - Removed all generic "Add MCP Server" / "Edit MCP Server" / "Delete MCP Server" UI and their modal (`isMcpModalOpen`), form state (`mcpName`, `mcpCommand`, `mcpArgsStr`, `mcpEnvStr`, `mcpEnabled`, `editingMcp`).
+  - Removed handler functions: `handleAddMcpServer`, `handleDeleteMcpServer`, `resetMcpForm`.
+  - Removed `ApiOutlined` from icon imports (was only used on the now-removed "MCP Servers" tab label).
+- **SRE Guardrails & Knowledge Rebrand + 5-Role Core Team (Aug 18, 2026)**:
+  - Rebranded Tab 4 from "Memories & Persona" to **"SRE Guardrails & Knowledge"** (no emoji, key: `memories`).
+  - Rebranded memory items to **"SRE Operational Policies & Cluster Knowledge"** with "Add SRE Policy / Cluster Rule" form and explicit SRE guardrail placeholders (e.g. CockroachDB Serverless in AWS ap-south-1, verify replication status, no destructive DDL without confirmation).
+  - Preserved full Add, Edit, Delete, and CockroachDB pgvector semantic retrieval (`search_user_memories`) into prompt context.
+  - Streamlined dynamic role assignments to a clean **5-Role Core SRE Team**: Main Orchestrator, Coding Sub-Agent, Reasoning Sub-Agent, Multimodal Specialist, Consensus Synthesizer. Removed the redundant 6th card (Background Summarizer & Memory).
+  - Enforced **No Silent Model Fallbacks**: If a role has no assignment in Redis or CockroachDB, the system logs an explicit warning (`[MODEL_ROUTER] No model assigned for role '<role>'. Please configure it in Settings -> Models & API Keys.`) rather than silently switching to an unassigned model.
+  - Frontend build verified: `npm run build` completed cleanly (0 errors, 16.35s). Backend import verified: `ChatRouter import OK`.
+
+- **OpenRouter Dispatcher Integration & Chat Bar Dropdown Streamlining (Aug 18, 2026)**:
+  - Added full OpenRouter support to `ProviderRouter`: live model catalog fetch (`https://openrouter.ai/api/v1/models`), zero-quota key verification (`/api/v1/auth/key`), and direct chat completion generation with tool-call and token usage support (`_generate_openrouter_direct`).
+  - Streamlined bottom-left chat bar model selector dropdown in [`ChatPanel.tsx`](file:///E:/Codes/CockroachAI/ui/src/components/ChatPanel.tsx) to only **`Auto (Orchestrator)`** and **`Multi-Model Team`** (removed manual specialist overrides so Orchestrator autonomously delegates via `ask_expert_model`).
+  - Maintained strict rule: Models can strictly only be chosen by the user in the UI and stored in CockroachDB / Redis with zero silent fallbacks.
+  - Verified: `npm run build` (0 errors, 16.93s) and `ProviderRouter loaded OK`.
+
+- **Amazon S3 Cloud Knowledge Base Tool Calling Suite (Aug 18, 2026)**:
+  - Registered 4 autonomous Amazon S3 tools in [`BasicTools`](file:///E:/Codes/CockroachAI/src/tools/basic_tools.py) and [`ToolManager`](file:///E:/Codes/CockroachAI/src/tools/basic_tools.py):
+    1. `s3_list_knowledge_base`: Lists all runbooks and incident logs in `s3://cockroachsre-knowledge-base/`.
+    2. `s3_fetch_and_index_runbook`: Fetches a runbook from S3 by name and indexes it into CockroachDB pgvector in real time.
+    3. `s3_upload_knowledge_base_object`: Uploads newly generated runbooks and incident logs directly to Amazon S3 and auto-indexes into CockroachDB pgvector.
+    4. `s3_sync_knowledge_base`: Synchronizes the full S3 knowledge base into CockroachDB pgvector.
+  - Retained `calculate` math evaluator tool.
+  - Verified: 24 total registered tools loaded in `ToolManager` with all S3 schemas verified.
+
+- **S3 Bucket 2-Folder Standardization & CockroachDB Deduplication (Aug 18, 2026)**:
+  - Standardized S3 bucket structure strictly to the 2 existing cloud folders: `runbooks/` (SRE playbooks) and `incident-logs/<date>/` (complete self-contained incident lifecycle JSONs including symptoms, root causes, and resolutions). Removed unused `postmortems/` prefix.
+  - Executed CockroachDB table cleanup (`scripts/cleanup_duplicates.py`): purged 14 duplicate runbooks and 7 duplicate incidents.
+  - Added `UPSERT` / title-based deduplication logic to `save_runbook`, `save_incident`, and `save_fix_history` in [`cockroach_store.py`](file:///E:/Codes/CockroachAI/src/memory/cockroach_store.py) to prevent duplicates from ever reoccurring during syncs or manual additions.
+  - Enhanced S3 sync pipeline (`s3_tools.py:sync_to_vector_store`): automatically parses incident JSONs from `incident-logs/` into both pgvector and relational tables (`incidents` and `fix_history`).
+  - Verified: 12 objects synced cleanly from S3 with 0 errors and 0 duplicate rows. Frontend build passed (32.51s).
+
 ## Planned Future Roadmap Tasks (Notion Tracked)
 - **Task 1: Live Token Usage & Budget Warning Tracker Widget**: Add live token/cost meter in top header bar showing expenditure ($) per session/model with dynamic OpenRouter pricing catalog sync, multi-tier protection (75% Soft Alert, 90% Auto-Downgrade, 100% Hard Cap), sub-agent cost attribution tagging, atomic Redis sync, and an analytics drawer with spending graphs.
 - **Task 2: Expanded Native MCP Tools**: Build `SystemMonitorTool` (CPU/RAM/Disk), `ProcessManagerTool` (active task management), and `GitInspectorTool` (git diffs/commits).
