@@ -1,57 +1,37 @@
-# AegisDB — Autonomous AI SRE Copilot (CockroachDB + Amazon S3 Architecture)
+# AegisDB — Autonomous AI SRE Copilot (CockroachDB + Amazon S3)
 
 <p align="center">
-  <img src="icons/logo_horizontal.SVG" alt="AegisDB Logo" width="400" />
+  <img src="icons/logo_horizontal.SVG" alt="AegisDB Logo" width="480" />
 </p>
 
 <p align="center">
-  <strong>The Indestructible Autonomous Site Reliability Engineering Copilot for Distributed Cloud Systems.</strong><br>
-  Built for the <em>CockroachDB × AWS Hackathon</em>.
+  <strong>The Indestructible Autonomous Site Reliability Engineering Copilot with Persistent CockroachDB Memory & Amazon S3 Runbook Automation.</strong><br>
+  <em>Built for the CockroachDB × AWS Hackathon (August 2026).</em>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/CockroachDB-pgvector_384d-6933FF?logo=cockroachlabs&logoColor=white" alt="CockroachDB" />
+  <img src="https://img.shields.io/badge/Amazon_S3-Knowledge_Base-FF9900?logo=amazons3&logoColor=white" alt="Amazon S3" />
+  <img src="https://img.shields.io/badge/Brain-Google_Gemini_2.0_Flash-4285F4?logo=google&logoColor=white" alt="Gemini" />
+  <img src="https://img.shields.io/badge/Tauri_v2-Desktop_Tray-24C8D8?logo=tauri&logoColor=white" alt="Tauri" />
+  <img src="https://img.shields.io/badge/Python-3.9+-3776AB?logo=python&logoColor=white" alt="Python" />
+  <img src="https://img.shields.io/badge/React-19_TypeScript-61DAFB?logo=react&logoColor=black" alt="React" />
+  <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License" />
 </p>
 
 ---
 
-## Project Overview
+## The Problem: Agents Need Memory That Never Goes Down
 
-**AegisDB** is an intelligent, multi-model AI-powered SRE (Site Reliability Engineering) agent system designed to run continuously in the background. It monitors active microservices, parses telemetry and application logs, queries CockroachDB performance statistics, retrieves authoritative playbooks from Amazon S3, and executes terminal diagnostic runbooks autonomously.
+When a distributed production service fails at 3 AM, every second of downtime counts. Human SREs must manually correlate telemetry alerts, search through scattered Wiki runbooks, and test remediation commands.
 
-The system uses **CockroachDB Cloud Serverless** as a consolidated relational memory layer and semantic vector store (via `pgvector`), and leverages **Amazon S3** (`cockroachsre-knowledge-base`) as the authoritative knowledge base for production runbooks and incident postmortems with automatic embedding pipelines.
+Traditional AI agents fail in production because their memory is either ephemeral (lost on crashes/reboots) or locked in fragile local stores that cannot survive failovers. **An AI SRE agent whose memory goes down doesn't degrade gracefully — it stops.**
 
----
-
-## Technology Stack
-
-The application is structured into a modular agent-host architecture:
-
-### Backend
-- **Core Engine**: Python 3.9+ (asyncio patterns)
-- **API Server**: FastAPI (JSON-RPC over WebSockets/HTTP)
-- **Consolidated Relational Memory**: CockroachDB Cloud Serverless (chat history, memories, role assignments, incidents, playbooks, API keys, and tool calls)
-- **Semantic Vector Storage**: Inline `pgvector` columns directly inside CockroachDB tables, queried with native cosine distance operators (`<=>`)
-- **Local Embedding Generation**: `SentenceTransformer('all-MiniLM-L6-v2')` executing 384-dimensional cosine matches locally (100% free, zero quota usage)
-- **Knowledge Base Source of Truth**: Amazon S3 bucket (`cockroachsre-knowledge-base`, `ap-south-1`) with continuous dual-sync into CockroachDB
-- **LLM Reasoning & Orchestration**: Google Gemini 2.0 Flash / AWS Bedrock (Claude 3.5 Sonnet) / OpenAI / Anthropic
-- **Distributed Cache & Sync**: Redis (portable Redis v5.0 binary auto-started and terminated cleanly by the backend host)
-- **Terminal Execution**: `pywinpty` for stateful native Windows PTY access with PSReadLine ANSI escape filtering
-
-### Frontend
-- **Desktop Application Shell**: Tauri (Rust backend wrapping system tray controls and IPC windows)
-- **Web Interface**: React (TypeScript)
-- **Theme and Components**: Ant Design (configured with customized dark-glassmorphism styles)
-
----
-
-## Core Features
-
-- **Consolidated CockroachDB Memory & pgvector Store**: Purged local SQLite and ChromaDB instances. Replaced with CockroachDB Cloud Serverless wire-compatible PostgreSQL connections. Added inline `embedding VECTOR(384)` columns to join messages and memories tables directly, conducting semantic vector lookups with native joins.
-- **Amazon S3 Knowledge Base Pipeline**: Direct bidirectional synchronization between Amazon S3 and CockroachDB pgvector. Pulls markdown runbooks and JSON incident logs on demand or on app launch.
-- **Tauri System Tray & Background Service**: Minimizes gracefully to the Windows System Tray on close. Features custom context menus (`🟢 AegisDB (Engine Active)`, `🖥️ Show Studio Window`, `➕ Start New Chat`, `⚡ Toggle AI Engine`, `❌ Quit AegisDB`) and left-click toggles.
-- **Zero-Install Portable Redis Memory**: Spawns and manages a bundled portable Redis server on start. Implements distributed locks, assembled context caching, and Pub/Sub broadcasts with SQLite/CockroachDB fallbacks.
-- **Smart Memory Curation & Auto-Consolidation**: Extracts enduring facts, user preferences, and system specs from conversation context. Curates fact bases dynamically via `UPDATE`, `ADD`, or `SKIP` evaluations.
-- **Multi-Model Team Consensus**: Spawns parallel background workers (Coding, Reasoning, Multimodal) using `asyncio.gather()` and merges results using a `ConsensusAggregator` to resolve conflicting solutions.
-- **Local MCP Client Host**: Boots stdio-based Model Context Protocol (MCP) servers as background subprocesses, conducts protocol handshakes, and exposes tools dynamically.
-- **Multi-Format Attachment Processor**: Decodes PDFs, log sheets, source code files, and images. Compiles image base64 `data_url` targets and passes them directly to vision APIs.
-- **Stateful PTY Terminal**: Implements stateful command-line interaction on Windows using `pywinpty` with PSReadLine ANSI escape splits to prevent typos and terminal overlaps.
+**AegisDB** solves this by providing **indestructible, production-grade agentic memory**:
+1. **Relational System of Record**: CockroachDB Cloud Serverless stores chat history, user facts, active incidents, and resolution histories with ACID guarantees.
+2. **Inline Vector Memory (`pgvector`)**: Native 384-dimensional cosine vector search (`<=>`) inside CockroachDB powers semantic RAG over runbooks, incident logs, and past fixes with zero external vector database silos.
+3. **Authoritative Knowledge Base**: Amazon S3 (`cockroachsre-knowledge-base`) acts as the single source of truth for production runbooks with automatic dual-sync into CockroachDB.
+4. **Autonomous Triage & Remediation**: Ingests alerts, queries matching runbooks via pgvector, executes diagnostic scripts inside a stateful Windows PTY terminal, and auto-resolves incidents.
 
 ---
 
@@ -59,84 +39,112 @@ The application is structured into a modular agent-host architecture:
 
 ```mermaid
 graph TD
-    User([SRE Engineer / Alert Ingest]) -->|Trigger Alert/Incident| UI[Tauri React Desktop Client - AegisDB]
+    User([SRE Engineer / Production Alert]) -->|Trigger Incident / Chat| UI[AegisDB Tauri Desktop Studio]
     
     subgraph Client App
-        UI -->|IPC Calls| Rust[Tauri Rust Bridge]
-        Rust -->|stdin/stdout JSON-RPC| PyAPI[Python Embedded Backend API]
+        UI -->|IPC Bridge| Rust[Tauri Rust Layer & System Tray]
+        Rust -->|stdin/stdout JSON-RPC| PyAPI[Embedded Python SRE Backend]
     end
 
-    subgraph Knowledge Base & Storage
-        PyAPI -->|Sync Runbooks & Incidents| S3[(Amazon S3 Knowledge Base)]
-        S3 -->|Embed & Index| CRDB[(CockroachDB Cloud Serverless)]
-        PyAPI -->|Store chats, logs, incidents, keys| CRDB
-        PyAPI -->|Cosine similarity search <=>| CRDB
-        PyAPI -->|Broadcast PubSub / Locks| Redis[(Portable Redis Cache & Sync)]
+    subgraph Knowledge Base & Storage Layer
+        PyAPI -->|Dual-Sync Runbooks & Postmortems| S3[(Amazon S3 Knowledge Base)]
+        S3 -->|Dense 384d Embeddings| CRDB[(CockroachDB Cloud Serverless)]
+        PyAPI -->|Relational State: Incidents, Chats, Keys| CRDB
+        PyAPI -->|Semantic RAG Search: <=> Cosine| CRDB
+        PyAPI -->|Distributed Locks & PubSub| Redis[(Portable Bundled Redis Cache)]
     end
 
-    subgraph LLM Orchestration & Tool Execution
-        PyAPI -->|Orchestrate workflow| Brain[Google Gemini 2.0 Flash / AWS Bedrock]
-        PyAPI -->|Expose local commands & logs| Terminal[Stateful PTY Terminal WinPTY]
-        PyAPI -->|Discovered APIs & Context| MCP[MCP Servers Host Stdio/SSE]
+    subgraph Autonomous Brain & Tools
+        PyAPI -->|Orchestrate Diagnostics| LLM[Google Gemini 2.0 Flash / Multi-Model Team]
+        PyAPI -->|Stateful Command Execution| Terminal[WinPTY Stateful Terminal]
+        PyAPI -->|Cluster Observability & Tools| MCP[CockroachDB Cloud MCP Server]
+        PyAPI -->|Execute SRE Skills| Skills[Custom SRE Skills Registry]
     end
     
-    PyAPI -->|Synthesize answers| Synthesizer[Consensus Synthesizer]
-    Synthesizer -->|Render responses & update status| UI
+    PyAPI -->|Stream Responses & Incident Updates| UI
 ```
 
 ---
 
-## Installation and Configuration
+## CockroachDB & AWS Capabilities
+
+### 🪳 CockroachDB Services Used
+
+1. **Distributed Vector Indexing (`pgvector` / `VECTOR(384)`)**:
+   - Stores dense 384-dimensional embeddings directly in CockroachDB (`documents`, `messages`, `user_memories` tables).
+   - Executes native SQL cosine distance queries (`SELECT ... ORDER BY embedding <=> %s::VECTOR LIMIT 5`).
+   - Implements atomic scoped wipe-and-replace transactions (`DELETE WHERE source = %s` followed by chunk insertion) to prevent stale ghost chunks.
+
+2. **CockroachDB Cloud Serverless (Relational State Store)**:
+   - PostgreSQL wire-compatible ACID storage across 10 tables: `conversations`, `messages`, `user_memories`, `role_assignments`, `api_keys`, `tool_calls`, `model_notes`, `sre_incidents`, `sre_runbooks`, and `sre_fix_history`.
+
+3. **CockroachDB Cloud Managed MCP Server & Agent Skills**:
+   - Streamable MCP endpoint (`https://cockroachlabs.cloud/mcp`) for live database metrics and schema analysis.
+   - Machine-executable SRE skills (`ingest_incident`, `save_runbook`, `record_fix_action`, `get_incidents`, `get_runbooks`, `get_fix_history`).
+
+### ☁️ AWS Services Used
+
+1. **Amazon S3 (`cockroachsre-knowledge-base`, Region: `ap-south-1`)**:
+   - Authoritative cloud storage for SRE runbooks (`.md`), incident postmortems, and telemetry logs.
+   - Bidirectional sync pipeline (`src/tools/s3_tools.py`) with UI trigger (**"Sync from AWS S3"**).
+
+---
+
+## Core Features
+
+- **Closed-Loop SRE Remediation**: Alert Ingest → S3 Runbook Match → Terminal Execution → CockroachDB Auto-Resolve → Vector Fix Embedding.
+- **Tauri System Tray & Background Service**: Minimizes to the Windows System Tray with native menus (`🟢 AegisDB (Engine Active)`, `🖥️ Show Studio Window`, `➕ Start New Chat`, `⚡ Toggle AI Engine`, `❌ Quit AegisDB`).
+- **Zero-Install Bundled Redis**: Auto-starts a portable Redis v5.0 binary for distributed locks and session state caching with automatic fallback.
+- **Smart Long-Term Memory Curation**: Auto-extracts enduring personal preferences and system specs, curating them via `UPDATE`, `ADD`, or `SKIP` evaluations in CockroachDB.
+- **Multi-Model Team Collaboration**: Parallel background workers (Coding, Reasoning, Multimodal) merged via a `ConsensusAggregator`.
+- **Stateful PTY Terminal**: Stateful Windows PTY terminal powered by `pywinpty` with ANSI escape sequence filtering.
+- **Multi-Format Attachment Processor**: Decodes PDFs, log sheets, source code files, and images into Base64 Data URLs for vision LLMs.
+
+---
+
+## Installation & Quickstart
 
 ### Prerequisites
-- **Python 3.9+** (Python 3.12+ recommended)
-- **Node.js v18+** and **npm**
-- **Cargo / Rust** (Only required if compiling Tauri binaries from source)
+- **Python 3.9+** (Python 3.12 recommended)
+- **Node.js v18+** & **npm**
+- **Rust / Cargo** (Only if building Tauri desktop binaries from source)
 
-### 1. Repository Setup
-
-Clone this repository and set up a virtual environment:
+### 1. Clone & Setup Backend
 
 ```bash
+# Clone the repository
 git clone https://github.com/Arthur-101/CockroachDB.git AegisDB
 cd AegisDB
 
-# Create virtual environment
+# Create and activate virtual environment
 python -m venv .venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
 # Install Python backend packages
-python -m pip install -r requirements.txt
+pip install -r requirements.txt
 ```
 
-Navigate to the `ui` directory and install front-end dependencies:
+### 2. Configure Environment
 
-```bash
-cd ui
-npm install
-```
-
-### 2. Environment Variables
-
-Create a `.env` file in the project root:
+Copy `.env.example` to `.env`:
 
 ```bash
 cp .env.example .env
 ```
 
-Open `.env` and set the following parameters:
+Set your configuration in `.env`:
 
 ```env
-# Database Connection (CockroachDB Serverless Cluster)
+# CockroachDB Cloud Serverless Connection
 COCKROACH_DATABASE_URL=postgresql://username:password@your-cluster.cockroachlabs.cloud:26257/defaultdb?sslmode=verify-full
 
-# Amazon S3 & AWS Configuration (Knowledge Base & Runbooks)
+# Amazon S3 Knowledge Base Configuration
 S3_BUCKET_NAME=cockroachsre-knowledge-base
 AWS_ACCESS_KEY_ID=YOUR_AWS_ACCESS_KEY_ID
 AWS_SECRET_ACCESS_KEY=YOUR_AWS_SECRET_ACCESS_KEY
 AWS_REGION=ap-south-1
 
-# Google AI Studio Configuration (Orchestrator & Vision)
+# Google AI Studio Configuration (Orchestrator Brain)
 GEMINI_API_KEY=YOUR_GEMINI_API_KEY
 
 # CockroachDB MCP Integration
@@ -144,35 +152,52 @@ COCKROACH_MCP_URL=https://cockroachlabs.cloud/mcp
 COCKROACH_MCP_CLUSTER_ID=YOUR_COCKROACH_MCP_CLUSTER_ID
 ```
 
-### 3. Direct API Keys Configuration
-
-Additional API keys (OpenAI, Anthropic, Groq, Mistral AI) can be configured dynamically within the application UI Settings Drawer (saved securely inside the CockroachDB `api_keys` table). No manual database inserting is required.
-
----
-
-## Running the Application
-
-### Backend Server (FastAPI JSON-RPC WebSocket)
-To start the backend service:
-
-```bash
-python main.py
-```
-This initializes the CockroachDB connection, auto-starts the bundled portable Redis engine, downloads vector models, and boots the FastAPI WebSocket server.
-
-### Desktop UI Mode (Tauri)
-To launch the desktop interface:
+### 3. Install UI Dependencies & Launch Desktop App
 
 ```bash
 cd ui
+npm install
+
+# Run Desktop Application (Tauri + React)
 npm run tauri dev
+```
+
+*(Alternatively, run in headless backend mode with `python main.py`)*
+
+---
+
+## Verification & Test Suite
+
+Run the full automated test suite to verify CockroachDB relational storage, pgvector semantic search, and SRE tools:
+
+```bash
+# 1. Test CockroachDB Relational Tables & Sessions
+python scripts/test_cockroach_store.py
+
+# 2. Test pgvector Cosine Search (<=>) & Document Lifecycle
+python scripts/test_vector_store.py
+
+# 3. Test SRE Incident Ingestion, Fix Actions & Semantic RAG
+python scripts/test_sre_tools.py
+
+# 4. Test MCP Protocol Tool Normalization
+python src/tools/test_mcp_normalization.py
+
+# 5. Compile Frontend Production Bundle
+cd ui && npm run build
 ```
 
 ---
 
-## Security & User Controls
-- **Zero Credential Leakage**: Strict `.env` isolation and verified zero committed secret tokens in code or Git history.
-- **User-in-the-Loop Confirmation**: File writes, command executions, and model settings adjustments require interactive prompt approvals.
-- **Budget Alerts**: Configurable limits monitor token expenses per model, issuing soft warnings and hard stops to prevent runaway resource consumption.
-- **Metadata Catalog Testing**: Model validation calls verify API connectivity directly via model listing schemas instead of generating token completions.
+## Security & Privacy Controls
+
+- **Zero Credential Leakage**: Strict `.env` isolation; zero hardcoded secrets in source code or Git commit history.
+- **Interactive Prompt Confirmations**: File writes and destructive terminal actions require explicit user confirmation.
+- **Zero-Quota Model Listing Checks**: API key validation checks endpoints without consuming generation token quotas.
+
+---
+
+## License
+
+Distributed under the **MIT License**. See `LICENSE` for more information.
 
