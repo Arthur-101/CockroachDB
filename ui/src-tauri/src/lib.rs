@@ -771,6 +771,9 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
                 if let Some(window) = app_handle_for_show.get_webview_window("main") {
+                    if let Some(icon) = app_handle_for_show.default_window_icon() {
+                        let _ = window.set_icon(icon.clone());
+                    }
                     let _ = window.center();
                     let _ = window.unminimize();
                     let _ = window.set_skip_taskbar(false);

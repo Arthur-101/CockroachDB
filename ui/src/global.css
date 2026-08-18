@@ -25,6 +25,10 @@ body, .ant-typography, p, h1, h2, h3, h4, h5, h6, ul, li {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
+.ant-layout-header {
+  line-height: normal !important;
+}
+
 /* Isolation rule for xterm to prevent proportional font contamination */
 .xterm, 
 .xterm *, 

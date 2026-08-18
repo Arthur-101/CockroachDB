@@ -1853,10 +1853,11 @@ export default function ChatPanel() {
         borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
         backdropFilter: 'blur(16px)',
         height: '56px',
+        lineHeight: 'normal',
         flexShrink: 0,
         zIndex: 100
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', height: '100%' }}>
           <Tooltip title={leftCollapsed ? "Expand Past Chats" : "Collapse Past Chats"}>
             <Button 
               type="text" 
@@ -1865,7 +1866,7 @@ export default function ChatPanel() {
             />
           </Tooltip>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '16px', fontWeight: 700, color: '#f8fafc' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '16px', fontWeight: 700, color: '#f8fafc', height: '100%' }}>
             <img 
               src="/logo.svg" 
               alt="AegisDB Logo" 
@@ -1887,6 +1888,9 @@ export default function ChatPanel() {
               border: `1px solid ${backendRunning ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
               display: 'inline-flex',
               alignItems: 'center',
+              lineHeight: '16px',
+              height: '22px',
+              whiteSpace: 'nowrap',
               gap: '6px'
             }}>
               <span className={backendRunning ? "status-dot-pulsing" : ""} style={{ width: 6, height: 6, borderRadius: '50%', background: backendRunning ? '#22c55e' : '#ef4444' }} />
@@ -1908,6 +1912,9 @@ export default function ChatPanel() {
                 border: `1px solid ${redisConnected === null ? 'rgba(100,116,139,0.3)' : redisConnected ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`,
                 display: 'inline-flex',
                 alignItems: 'center',
+                lineHeight: '16px',
+                height: '22px',
+                whiteSpace: 'nowrap',
                 gap: '5px',
                 marginLeft: '4px',
               }}>

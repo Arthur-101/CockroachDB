@@ -352,6 +352,14 @@ data/
   - Saved redesign options to the CockroachAI Notion Hub page (`3b8c8b7b-66a5-809d-bfeb-f380a7bcb0e4`) and subpage `💡 Ideas & Architecture Planning` (`3b8c8b7b-66a5-81dc-a510-f0bf3061e9db`).
   - Deployed Option 1 into the main [`README.md`](file:///E:/Codes/CockroachAI/README.md) and pushed directly to GitHub.
 
+- **App Icon PNG & Brand Asset Reload (`ui/`, `ui/src-tauri/icons/`, `ChatPanel.tsx`)**:
+  - Restored `logo.svg` for the brand studio logo next to "AegisDB Studio" in [`ChatPanel.tsx`](file:///E:/Codes/CockroachAI/ui/src/components/ChatPanel.tsx).
+  - Generated the full suite of Tauri desktop and mobile application icons (`icon.ico`, `icon.icns`, `128x128.png`, `128x128@2x.png`, `32x32.png`, `Square*.png`) from `icons/appicon.png` using `@tauri-apps/cli` so the Windows Taskbar and OS Window Titlebar render the new icon.
+  - Added explicit `window.set_icon(icon)` in [`lib.rs`](file:///E:/Codes/CockroachAI/ui/src-tauri/src/lib.rs) during window setup to ensure the OS titlebar and taskbar icons are applied.
+  - Rebuilt production frontend bundle (`npm run build`) and verified `cargo check` in `src-tauri` with zero errors.
+  - Aligned project tracker targets with Notion master hub **CockroachAI** (Page ID: `3b8c8b7b-66a5-809d-bfeb-f380a7bcb0e4`) and its sub-pages.
+  - **Header Status Badge Sizing Fix (`ui/src/global.css`, `ChatPanel.tsx`)**: Resolved Ant Design `.ant-layout-header` default line-height inheritance stretching the "Ready" and "Redis Live" pill badges vertically. Fixed with `.ant-layout-header { line-height: normal !important; }`, explicit `height: 22px`, `lineHeight: 16px`, and `whiteSpace: nowrap`.
+
 ## Planned Future Roadmap Tasks (Notion Tracked)
 - **Task 1: Live Token Usage & Budget Warning Tracker Widget**: Add live token/cost meter in top header bar showing expenditure ($) per session/model with dynamic OpenRouter pricing catalog sync, multi-tier protection (75% Soft Alert, 90% Auto-Downgrade, 100% Hard Cap), sub-agent cost attribution tagging, atomic Redis sync, and an analytics drawer with spending graphs.
 - **Task 2: Expanded Native MCP Tools**: Build `SystemMonitorTool` (CPU/RAM/Disk), `ProcessManagerTool` (active task management), and `GitInspectorTool` (git diffs/commits).
