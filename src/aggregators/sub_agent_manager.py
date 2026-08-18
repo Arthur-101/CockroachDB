@@ -276,7 +276,13 @@ class SubAgentManager:
             "context, inspect code, or verify facts. Use tools whenever necessary to perform your tasks.]"
         )
         messages = [{"role": "system", "content": tool_system_instruction}]
-        for msg in context[-3:]:
+        
+        # Include past dialogue conversation turns from context (up to last 8 messages)
+        dialogue_turns = [
+            m for m in context 
+            if m.get("role") in ("user", "assistant") and m.get("content") != user_message
+        ]
+        for msg in dialogue_turns[-8:]:
             if msg.get("content"):
                 messages.append({"role": msg.get("role", "user"), "content": msg["content"]})
 
@@ -329,6 +335,7 @@ class SubAgentManager:
         max_tool_turns = 5
         turn = 0
         active_model = model_id
+        executed_tools: List[Dict[str, Any]] = []
 
         # Execute generation & tool calls loop
         while turn < max_tool_turns:
@@ -383,6 +390,7 @@ class SubAgentManager:
                 # Exclude recursive expert model delegation to prevent infinite sub-agent loops
                 if tc_name == "ask_expert_model":
                     tool_res = {"success": False, "message": "Recursive expert model invocation is disabled for sub-agents."}
+                    tc_args = {}
                 else:
                     try:
                         tc_args = json.loads(tc.get("function", {}).get("arguments", "{}"))
@@ -392,6 +400,8 @@ class SubAgentManager:
                     # Print exact tool call logs for UI stream
                     print(f"Sub-agent [{role}] Running Tool: {tc_name} with {tc_args}", file=sys.stderr, flush=True)
                     tool_res = tool_manager.execute_tool(tc_name, tc_args)
+
+                executed_tools.append({"name": tc_name, "args": tc_args, "result": tool_res})
 
                 # Append tool result to history
                 messages.append({
@@ -403,9 +413,33 @@ class SubAgentManager:
 
             turn += 1
 
-        # If content is empty (model only used tools or returned nothing), add a fallback
+        # If content is still empty after tool turns, make a final synthesis call without tools
         if not content.strip():
-            content = f"[{role} agent completed tool execution — no summary text returned]"
+            try:
+                final_response = await self.provider_router.generate(
+                    messages=messages,
+                    model_id=active_model,
+                    temperature=0.2,
+                    max_tokens=max_tokens,
+                    tools=None
+                )
+                tokens_used += final_response.get("tokens_used", 0)
+                content = final_response.get("content", "").strip()
+            except Exception as e:
+                logger.warning(f"Final synthesis call for sub-agent [{role}] failed: {e}")
+
+        # Format tool summary header if tools were executed
+        if executed_tools:
+            tool_lines = []
+            for t in executed_tools:
+                args_str = ", ".join(f"{k}={repr(v)}" for k, v in t.get("args", {}).items())
+                tool_lines.append(f"- `{t['name']}({args_str})`")
+            tool_block = "**Tools Executed:**\n" + "\n".join(tool_lines) + "\n\n"
+            content = f"{tool_block}{content}" if content.strip() else f"{tool_block}[Completed tool execution]"
+
+        # Fallback if still completely blank
+        if not content.strip():
+            content = f"[{role} agent completed analysis]"
 
         # Stream live sub-agent output to UI via stderr
         log_payload = json.dumps({"role": role, "model": active_model, "reply": content})

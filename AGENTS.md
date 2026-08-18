@@ -397,6 +397,25 @@ data/
   - Enhanced S3 sync pipeline (`s3_tools.py:sync_to_vector_store`): automatically parses incident JSONs from `incident-logs/` into both pgvector and relational tables (`incidents` and `fix_history`).
   - Verified: 12 objects synced cleanly from S3 with 0 errors and 0 duplicate rows. Frontend build passed (32.51s).
 
+- **ChatContext Dataclass Field Alignment Fix (Aug 18, 2026)**:
+  - Fixed `ChatContext` dataclass in [`src/controller/chat_router.py`](file:///E:/Codes/CockroachAI/src/controller/chat_router.py) by aligning all constructor attributes (`session_id`, `assembled_messages`, `used_summaries`, `matched_tags`, `system_prompt`, `recent_summaries`, `tag_matched_messages`) with default factories.
+  - Resolved JSON-RPC internal error (`ChatContext.__init__() got an unexpected keyword argument 'session_id'`).
+  - Verified context assembly in Python with exit code 0.
+
+- **Disabled Background Memory Extraction & Purged Auto-Facts (Aug 18, 2026)**:
+  - Removed `_extract_and_save_facts` and `_summarize_messages` asynchronous background tasks from [`src/controller/chat_router.py`](file:///E:/Codes/CockroachAI/src/controller/chat_router.py).
+  - Purged 5 auto-extracted fact cards from CockroachDB `user_memories` table so Tab 4 (**SRE Guardrails & Knowledge**) strictly contains only intentional, user-authored SRE operational policies.
+  - Verified chat generation with `google:gemini-3.6-flash`: 0 errors, 0 background extractions.
+
+- **Multi-Turn Conversation Memory & Sub-Agent Tool Calling Suite (Aug 18, 2026)**:
+  - Fixed context assembly structure in [`src/controller/chat_router.py`](file:///E:/Codes/CockroachAI/src/controller/chat_router.py): unified all System/RAG/Guardrails/Terminal blocks into top system messages, preventing `insert(-1)` from interleaving system messages into dialogue turns.
+  - Preserved full chronological user/assistant conversation history turns (up to 10 past messages) directly in context for both Auto and Multi-Model Team modes.
+  - Updated [`src/aggregators/sub_agent_manager.py`](file:///E:/Codes/CockroachAI/src/aggregators/sub_agent_manager.py) and [`src/aggregators/consensus_aggregator.py`](file:///E:/Codes/CockroachAI/src/aggregators/consensus_aggregator.py) to pass dialogue turns to all sub-agents (Reasoning, Coding, Multimodal) and the Consensus Synthesizer.
+  - Enhanced Sub-Agent Tool Calling Output: tracked all sub-agent tool executions (`executed_tools`), guaranteed a final synthesis call without tools if content was blank, and rendered formatted `**Tools Executed:**` lists directly inside expandable sub-agent chat bubbles.
+  - Injected `User Downloads Directory: <resolved_path>` into `CURRENT SYSTEM STATUS` in `_assemble_context` so the agent always knows the user's Downloads folder.
+  - Handled MCP connection teardown exceptions gracefully in `SseMcpClient`.
+  - Verified: Sub-agent outputs are rich, comprehensive, and display all tool calls. Frontend build passed (0 errors, 15.00s).
+
 ## Planned Future Roadmap Tasks (Notion Tracked)
 - **Task 1: Live Token Usage & Budget Warning Tracker Widget**: Add live token/cost meter in top header bar showing expenditure ($) per session/model with dynamic OpenRouter pricing catalog sync, multi-tier protection (75% Soft Alert, 90% Auto-Downgrade, 100% Hard Cap), sub-agent cost attribution tagging, atomic Redis sync, and an analytics drawer with spending graphs.
 - **Task 2: Expanded Native MCP Tools**: Build `SystemMonitorTool` (CPU/RAM/Disk), `ProcessManagerTool` (active task management), and `GitInspectorTool` (git diffs/commits).

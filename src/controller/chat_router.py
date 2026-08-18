@@ -4,7 +4,7 @@ import asyncio
 import re
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
 from src.models.openrouter_client import OpenRouterClient, Message, ModelType
@@ -23,10 +23,13 @@ import json
 @dataclass
 class ChatContext:
     """Represents assembled chat context."""
-    system_prompt: str
-    recent_summaries: List[Dict[str, str]]
-    tag_matched_messages: List[Dict[str, Any]]
-    assembled_messages: List[Message]
+    session_id: str = ""
+    assembled_messages: List[Message] = field(default_factory=list)
+    used_summaries: bool = False
+    matched_tags: List[str] = field(default_factory=list)
+    system_prompt: str = ""
+    recent_summaries: List[Dict[str, str]] = field(default_factory=list)
+    tag_matched_messages: List[Dict[str, Any]] = field(default_factory=list)
 
 
 class ChatRouter:
@@ -132,7 +135,11 @@ class ChatRouter:
                     tokens_used=res.get("tokens_used", 0)
                 )
             
-            aggregated = await consensus.synthesize_response(user_message, sub_results)
+            aggregated = await consensus.synthesize_response(
+                user_message=user_message,
+                sub_agent_results=sub_results,
+                conversation_context=[{"role": m.role, "content": m.content} for m in context.assembled_messages]
+            )
             assistant_response = {
                 "content": aggregated["content"],
                 "model_id": "multi-model-team",
@@ -164,13 +171,6 @@ class ChatRouter:
         if redis_store.is_connected():
             redis_store.publish_message(effective_session_id, "assistant", assistant_response["content"], assistant_response["model_id"])
         
-        # Summarize both messages asynchronously
-        if use_summaries:
-            asyncio.create_task(self._summarize_messages(user_msg_id, assistant_msg_id))
-
-        # Extract factual memory asynchronously
-        asyncio.create_task(self._extract_and_save_facts(user_message, tags))
-        
         return {
             "response": assistant_response["content"],
             "model": assistant_response["model_id"],
@@ -201,7 +201,8 @@ class ChatRouter:
         # Add current datetime to system prompt
         datetime_info = self.tool_manager.basic_tools.get_current_datetime()["result"]
         date_str = datetime_info.get("datetime", datetime.now().strftime('%Y-%m-%d %H:%M:%S %A'))
-        system_prompt += f"\n\nCURRENT SYSTEM STATUS:\n- Current Date and Time: {date_str}\n- Current Working Directory: {Path.cwd()}"
+        downloads_dir = Path.home() / "Downloads"
+        system_prompt += f"\n\nCURRENT SYSTEM STATUS:\n- Current Date and Time: {date_str}\n- Current Working Directory: {Path.cwd()}\n- User Downloads Directory: {downloads_dir}"
         
         # Add system prompt
         context_messages.append(Message(role="system", content=system_prompt))
@@ -255,105 +256,27 @@ class ChatRouter:
                 
         if extracted_files_context:
             context_messages.append(
-                Message(role="system", content="The user referenced the following small files in their message:\n\n" + "\n\n".join(extracted_files_context))
+                Message(role="system", content="The user referenced the following files in their message:\n\n" + "\n\n".join(extracted_files_context))
             )
 
-        # Search vector store for document chunks across all indexed files
-        similar_docs = self.vector_store.search_documents(query=user_message, limit=5)
-        if similar_docs:
-            doc_context_texts = []
-            for item in similar_docs:
-                filepath = item["metadata"].get("file_path", "Unknown File")
-                chunk_id = item["metadata"].get("chunk", "?")
-                doc_context_texts.append(f"--- From {filepath} (chunk {chunk_id}) ---\n{item['content']}")
-            
-            if doc_context_texts:
-                doc_context = "\n\n".join(doc_context_texts)
-                context_messages.append(
-                    Message(role="system", content=f"Relevant document snippets retrieved from the vector database based on the user's query:\n{doc_context}\n\nSYSTEM INSTRUCTION: You MUST use these retrieved document snippets if they are relevant to answer the user.")
-                )
-        
-        recent_summaries = []
-        if use_summaries:
-            # Fetch unique summaries to provide broad context without confusing the model
-            try:
-                if hasattr(self.memory_store, "get_recent_summaries"):
-                    recent_summaries = self.memory_store.get_recent_summaries(session_id, limit=3)
-                else:
-                    cur = self.memory_store.connection.cursor()
-                    cur.execute("""
-                    SELECT DISTINCT content_summary
-                    FROM (
-                        SELECT content_summary, MIN(created_at) as first_created
-                        FROM messages
-                        WHERE session_id = %s AND content_summary IS NOT NULL
-                        GROUP BY content_summary
-                        ORDER BY first_created DESC
-                        LIMIT 3
-                    )
-                    ORDER BY first_created ASC
-                    """, (session_id,))
-                    rows = cur.fetchall()
-                    recent_summaries = [{"content_summary": row["content_summary"]} for row in rows]
-            except Exception as e:
-                logger.debug(f"Could not retrieve recent summaries: {e}")
-            
-            summary_texts = [
-                s.get("content_summary") for s in recent_summaries 
-                if isinstance(s, dict) and s.get("content_summary")
-            ]
-            if summary_texts:
-                summary_text = "\n".join(f"- {s}" for s in summary_texts)
-                context_messages.append(
-                    Message(role="system", content=f"Summary of older conversation:\n{summary_text}")
-                )
-        
-        tag_matched_messages = []
-        if tags:
-            # Get messages matching tags
-            matched = self.memory_store.get_messages_by_tags(tags, session_id, limit=3)
-            tag_matched_messages = matched
-            
-            # Add tag-matched messages to context
-            related_text = "\n".join([m["content_summary"] or m["content_raw"] for m in matched if m["content_raw"] != user_message])
-            if related_text:
-                context_messages.append(
-                    Message(role="system", content=f"Related past context based on keywords:\n{related_text}")
-                )
-                
-        # Add recent raw messages (last 8 messages = ~4 turns), filtering sub_agent role
-        # Fetch 12 so there are enough after filtering out sub_agent entries
-        recent_raw = self.memory_store.get_messages(session_id, limit=12)
-        valid_recent = [m for m in recent_raw if m["role"] != "sub_agent"][-8:]
-        
-        for msg in valid_recent:
-            # The current user message is already in the db, don't add it yet
-            if msg["content_raw"] != user_message:
-                context_messages.append(Message(role=msg["role"], content=msg["content_raw"]))
-        
-        # Add current user message
-        context_messages.append(Message(role="user", content=user_message))
-        
-        # Search vector store for similar past context
-        similar_past = self.vector_store.search_user_memories(query=user_message, limit=3)
+        # Search vector store for similar SRE operational policies and cluster guardrails
+        similar_past = self.vector_store.search_user_memories(query=user_message, limit=5)
         if similar_past:
             vector_context_texts = []
             for item in similar_past:
-                # Ensure we don't duplicate the current exact message
                 if item["content"] != user_message:
                     vector_context_texts.append(f"- {item['content']}")
-            
             if vector_context_texts:
                 vector_context = "\n".join(vector_context_texts)
-                context_messages.insert(-1, Message(role="system", content=f"Relevant SRE operational policies and cluster knowledge retrieved from persistent memory:\n{vector_context}\n\nSYSTEM INSTRUCTION: Apply these SRE operational policies and cluster rules when relevant to the incident or task."))
+                context_messages.append(Message(
+                    role="system",
+                    content=f"Relevant SRE operational policies and cluster knowledge retrieved from persistent memory:\n{vector_context}\n\nSYSTEM INSTRUCTION: Apply these SRE operational policies and cluster rules when relevant to the incident or task."
+                ))
 
-        # Search vector store for relevant indexed document chunks (RAG)
+        # Search vector store for relevant indexed document chunks & runbooks (Amazon S3 / CockroachDB RAG)
         doc_results = self.vector_store.search_documents(query=user_message, limit=5)
-        
-        # If explicitly attached files are in the prompt, also search by file name/path to guarantee retrieval
         file_matches = re.findall(r'\[Attached File: ([^\|]+)\| Path: ([^\]]+)\]', user_message)
         existing_paths = {item.get("metadata", {}).get("file_path") for item in doc_results if item.get("metadata")}
-        
         for file_name, file_path in file_matches:
             file_name = file_name.strip()
             file_path = file_path.strip()
@@ -374,19 +297,36 @@ class ChatRouter:
                 if content_chunk and content_chunk not in seen_chunks:
                     seen_chunks.add(content_chunk)
                     doc_context_texts.append(f"[{file_name}]:\n{content_chunk}")
-                    
             if doc_context_texts:
                 doc_context = "\n\n".join(doc_context_texts)
-                context_messages.insert(-1, Message(
+                context_messages.append(Message(
                     role="system",
-                    content=f"Relevant knowledge base runbooks & document chunks (Amazon S3 / CockroachDB RAG):\n{doc_context}\n\nSYSTEM INSTRUCTION: Prioritize runbooks and technical documents retrieved above when troubleshooting."
+                    content=f"Relevant knowledge base runbooks & technical documents (Amazon S3 / CockroachDB RAG):\n{doc_context}\n\nSYSTEM INSTRUCTION: Prioritize runbooks and technical documents retrieved above when troubleshooting."
                 ))
-        
+
         # Add live terminal state
         term_history = terminal_manager.get_history(lines=60)
         if term_history and term_history.strip():
-            context_messages.insert(-1, Message(role="system", content=f"--- CURRENT TERMINAL STATE ---\n{term_history}\n--- END TERMINAL STATE ---\n\nSYSTEM INSTRUCTION: This is the live output of the shared terminal. You can see the commands the user ran and their outputs. Use this to understand the current state and answer the user's questions."))
-            
+            context_messages.append(Message(
+                role="system",
+                content=f"--- CURRENT TERMINAL STATE ---\n{term_history}\n--- END TERMINAL STATE ---\n\nSYSTEM INSTRUCTION: This is the live output of the shared terminal. You can see the commands the user ran and their outputs. Use this to understand the current state and answer the user's questions."
+            ))
+
+        # Add recent conversation dialogue history (last 10 messages = ~5 turns)
+        recent_raw = self.memory_store.get_messages(session_id, limit=20)
+        valid_recent = [m for m in recent_raw if m["role"] in ("user", "assistant")]
+        # The current user message was saved to db right before _assemble_context, so pop it from history to avoid duplication
+        if valid_recent and valid_recent[-1]["content_raw"] == user_message and valid_recent[-1]["role"] == "user":
+            valid_recent = valid_recent[:-1]
+        
+        # Take the most recent 10 past messages
+        past_turns = valid_recent[-10:]
+        for msg in past_turns:
+            context_messages.append(Message(role=msg["role"], content=msg["content_raw"]))
+
+        # Finally, append the current user turn
+        context_messages.append(Message(role="user", content=user_message))
+
         return ChatContext(
             session_id=session_id,
             assembled_messages=context_messages,
@@ -742,67 +682,6 @@ class ChatRouter:
             pass
         logger.warning(f"[MODEL_ROUTER] No model assigned for role '{role}'. Please configure it in Settings -> Models & API Keys.")
         return default_model
-
-    async def _summarize_messages(self, user_msg_id: str, assistant_msg_id: str):
-        """Summarize messages asynchronously."""
-        try:
-            cur = self.memory_store._cursor() if hasattr(self.memory_store, "_cursor") else self.memory_store.connection.cursor()
-            param_placeholder = "%s" if hasattr(self.memory_store, "_cursor") else "?"
-            cur.execute(
-                f"SELECT content_raw FROM messages WHERE id IN ({param_placeholder}, {param_placeholder})",
-                (user_msg_id, assistant_msg_id)
-            )
-            rows = cur.fetchall()
-            
-            if len(rows) == 2:
-                user_content = rows[0]["content_raw"]
-                assistant_content = rows[1]["content_raw"]
-                
-                combined = f"User: {user_content}\nAssistant: {assistant_content}"
-                summary_model = self._get_assigned_model_for_role("summary", "google:gemini-2.0-flash")
-                
-                summary = await self.client.summarize_content(
-                    content=combined,
-                    max_tokens=config.settings.summary_max_tokens,
-                    model_id=summary_model,
-                )
-                
-                self.memory_store.update_message_summary(user_msg_id, summary)
-                self.memory_store.update_message_summary(assistant_msg_id, summary)
-                
-        except Exception as e:
-            print(f"Error summarizing messages: {e}")
-    
-    async def _extract_and_save_facts(self, user_message: str, tags: List[str]):
-        """Extract factual memories, consolidate with existing memories, and auto-update."""
-        try:
-            summary_model = self._get_assigned_model_for_role("summary", "google:gemini-2.0-flash")
-            facts = await self.client.extract_memory_facts(user_message, model_id=summary_model)
-            if not facts:
-                return
-
-            existing_memories = self.memory_store.get_all_user_memories()
-            actions = await self.client.consolidate_memory_actions(existing_memories, facts, model_id=summary_model)
-
-            for item in actions:
-                act = item.get("action")
-                if act == "add":
-                    content = item.get("content")
-                    if content:
-                        memory_id = self.memory_store.save_user_memory(content, tags)
-                        self.vector_store.add_user_memory(memory_id, content)
-                        print(f"[MEMORY] Added: {content}")
-                elif act == "update":
-                    m_id = item.get("memory_id")
-                    content = item.get("content")
-                    if m_id and content:
-                        self.memory_store.update_user_memory(m_id, content)
-                        self.vector_store.update_user_memory(m_id, content)
-                        print(f"[MEMORY] Auto-Updated [{m_id}]: {content}")
-                elif act == "skip":
-                    print("[MEMORY] Skipped (Already exists)")
-        except Exception as e:
-            print(f"Error extracting and consolidating facts: {e}")
 
     def get_session_history(
         self,

@@ -1,7 +1,7 @@
 import json
 import sys
 import logging
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +38,8 @@ class ConsensusAggregator:
     async def synthesize_response(
         self,
         user_message: str,
-        sub_agent_results: List[Dict[str, Any]]
+        sub_agent_results: List[Dict[str, Any]],
+        conversation_context: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         """Synthesize sub-agent outputs into a unified output."""
         if not sub_agent_results:
@@ -76,7 +77,19 @@ class ConsensusAggregator:
             "7. Format beautifully in professional GitHub Markdown."
         )
         
-        user_prompt = f"ORIGINAL USER PROMPT:\n{user_message}\n\nSUB-AGENT TEAM CONTRIBUTIONS:\n{team_payload}"
+        # Extract past dialogue turns if conversation context is provided
+        dialogue_turns = []
+        if conversation_context:
+            dialogue_turns = [
+                m for m in conversation_context 
+                if m.get("role") in ("user", "assistant") and m.get("content") != user_message
+            ][-6:]
+
+        if dialogue_turns:
+            conv_summary = "\n".join(f"{m.get('role', 'user').upper()}: {m.get('content', '')}" for m in dialogue_turns)
+            user_prompt = f"RECENT CONVERSATION CONTEXT:\n{conv_summary}\n\nORIGINAL USER PROMPT:\n{user_message}\n\nSUB-AGENT TEAM CONTRIBUTIONS:\n{team_payload}"
+        else:
+            user_prompt = f"ORIGINAL USER PROMPT:\n{user_message}\n\nSUB-AGENT TEAM CONTRIBUTIONS:\n{team_payload}"
         
         try:
             response = await self.provider_router.generate(

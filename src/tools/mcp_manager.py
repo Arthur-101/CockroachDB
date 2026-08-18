@@ -320,6 +320,14 @@ class HttpMcpClient:
         asyncio.set_event_loop(self._loop)
         try:
             self._loop.run_until_complete(self._connect_and_run())
+        except (asyncio.CancelledError, RuntimeError) as e:
+            if not self._running or "Event loop stopped before Future completed" in str(e):
+                self.log("Connection closed.")
+            else:
+                self.log(f"Connection loop error: {e}")
+                if self.status == "Stopped":
+                    self.status = "Error"
+                    self.error_message = str(e)
         except Exception as e:
             self.log(f"Connection loop error: {e}")
             if self.status == "Stopped":
